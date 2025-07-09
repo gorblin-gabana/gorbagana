@@ -52,7 +52,7 @@ async fn realloc_smaller_in_cpi() {
     );
     let mut context = program_test.start_with_context().await;
 
-    let token_2022_id = Pubkey::try_from("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
+    let token_2022_id = Pubkey::try_from("FGyzDo6bhE7gFmSYymmFnJ3SZZu3xWGBA7sNHXR7QQsn").unwrap();
     let mint = Keypair::new();
     let account = Keypair::new();
     let rent = context.banks_client.get_rent().await.unwrap();

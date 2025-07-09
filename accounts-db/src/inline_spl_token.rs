@@ -1,7 +1,7 @@
 /// Partial SPL Token declarations inlined to avoid an external dependency on the spl-token crate
 use solana_sdk::pubkey::{Pubkey, PUBKEY_BYTES};
 
-solana_sdk::declare_id!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+solana_sdk::declare_id!("J75xRH7sSRsdATbi1pgN7srt54gSj61thm5QsMQqPcwo");
 
 pub mod program_v3_4_0 {
     solana_sdk::declare_id!("NToK4t5AQzxPNpUA84DkxgfXaVDbDQQjpHKCqsbY46B");

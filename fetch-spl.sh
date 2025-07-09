@@ -44,11 +44,11 @@ fetch_program() {
 
 }
 
-fetch_program token 3.5.0 TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA BPFLoader2111111111111111111111111111111111
-fetch_program token-2022 0.9.0 TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb BPFLoaderUpgradeab1e11111111111111111111111
+fetch_program token 3.5.0 J75xRH7sSRsdATbi1pgN7srt54gSj61thm5QsMQqPcwo BPFLoader2111111111111111111111111111111111
+fetch_program token-2022 0.9.0 FGyzDo6bhE7gFmSYymmFnJ3SZZu3xWGBA7sNHXR7QQsn BPFLoaderUpgradeab1e11111111111111111111111
 fetch_program memo  1.0.0 Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo BPFLoader1111111111111111111111111111111111
 fetch_program memo  3.0.0 MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr BPFLoader2111111111111111111111111111111111
-fetch_program associated-token-account 1.1.2 ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL BPFLoader2111111111111111111111111111111111
+fetch_program associated-token-account 1.1.2 4YpYoLVTQ8bxcne9GneN85RUXeN7pqGTwgPcY71ZL5gX BPFLoader2111111111111111111111111111111111
 fetch_program feature-proposal 1.0.0 Feat1YXHhH6t1juaWF74WLcfv4XoNocjXA6sPWHNgAse BPFLoader2111111111111111111111111111111111
 
 echo "${genesis_args[@]}" > spl-genesis-args.sh

@@ -26,7 +26,7 @@ async fn max_compute_units() {
     // Invalid compute unit maximums are only triggered by BPF programs, so send
     // a valid instruction into a BPF program to make sure the issue doesn't
     // manifest.
-    let token_2022_id = Pubkey::try_from("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap();
+    let token_2022_id = Pubkey::try_from("FGyzDo6bhE7gFmSYymmFnJ3SZZu3xWGBA7sNHXR7QQsn").unwrap();
     let mint = Keypair::new();
     let rent = context.banks_client.get_rent().await.unwrap();
     let space = 82;
