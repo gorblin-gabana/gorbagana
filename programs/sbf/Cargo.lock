@@ -6643,9 +6643,7 @@ dependencies = [
 
 [[package]]
 name = "solana_rbpf"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d457cc2ba742c120492a64b7fa60e22c575e891f6b55039f4d736568fb112a3"
+version = "0.8.5"
 dependencies = [
  "byteorder 1.5.0",
  "combine",
@@ -6674,9 +6672,7 @@ checksum = "c530c2b0d0bf8b69304b39fe2001993e267461948b890cd037d8ad4293fa1a0d"
 
 [[package]]
 name = "spl-associated-token-account"
-version = "2.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4414117bead33f2a5cf059cefac0685592bdd36f31f3caac49b89bff7f6bbf32"
+version = "6.0.0"
 dependencies = [
  "assert_matches",
  "borsh 0.10.3",
@@ -6734,9 +6730,7 @@ dependencies = [
 
 [[package]]
 name = "spl-pod"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a5db7e4efb1107b0b8e52a13f035437cdcb36ef99c58f6d467f089d9b2915a"
+version = "0.5.1"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -6932,7 +6926,7 @@ dependencies = [
 
 [[package]]
 name = "subtle"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 

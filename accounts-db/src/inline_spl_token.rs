@@ -3,22 +3,6 @@ use solana_sdk::pubkey::{Pubkey, PUBKEY_BYTES};
 
 solana_sdk::declare_id!("J75xRH7sSRsdATbi1pgN7srt54gSj61thm5QsMQqPcwo");
 
-pub mod program_v3_4_0 {
-    solana_sdk::declare_id!("NToK4t5AQzxPNpUA84DkxgfXaVDbDQQjpHKCqsbY46B");
-}
-
-/*
-    spl_token::state::Account {
-        mint: Pubkey,
-        owner: Pubkey,
-        amount: u64,
-        delegate: COption<Pubkey>,
-        state: AccountState,
-        is_native: COption<u64>,
-        delegated_amount: u64,
-        close_authority: COption<Pubkey>,
-    }
-*/
 pub const SPL_TOKEN_ACCOUNT_MINT_OFFSET: usize = 0;
 pub const SPL_TOKEN_ACCOUNT_OWNER_OFFSET: usize = 32;
 const SPL_TOKEN_ACCOUNT_LENGTH: usize = 165;

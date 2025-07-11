@@ -387,20 +387,20 @@ solana-wen-restart = { path = "wen-restart", version = "=2.0.0" }
 solana-zk-keygen = { path = "zk-keygen", version = "=2.0.0" }
 solana-zk-token-proof-program = { path = "programs/zk-token-proof", version = "=2.0.0" }
 solana-zk-token-sdk = { path = "zk-token-sdk", version = "=2.0.0" }
-solana_rbpf = "=0.8.0"
-spl-associated-token-account = "=2.3.1"
+solana_rbpf = "=0.8.5"
+spl-associated-token-account = "=6.0.0"
 spl-instruction-padding = "0.1"
 spl-memo = "=4.0.1"
-spl-pod = "=0.1.1"
-spl-token = "=4.0.1"
-spl-token-2022 = "=2.0.1"
-spl-token-group-interface = "=0.1.1"
-spl-token-metadata-interface = "=0.2.1"
+spl-pod = "=0.5.1"
+spl-token = { path = "spl-token", version = "=6.0.0"}
+spl-token-2022 = { path = "spl-token-2022", version = "=5.0.2"}
+spl-token-group-interface = "=0.6.0"
+spl-token-metadata-interface = "=0.6.0"
 static_assertions = "1.1.0"
 stream-cancel = "0.8.2"
 strum = "0.24"
 strum_macros = "0.24"
-subtle = "2.4.1"
+subtle = "2.5.0"
 symlink = "0.1.0"
 syn = "2.0"
 sys-info = "0.9.1"
