@@ -113,7 +113,7 @@ impl PushActiveSetEntry {
         origin: &'a Pubkey,
         // If true forces gossip push even if the node has pruned the origin.
         mut should_force_push: impl FnMut(&Pubkey) -> bool + 'a,
-    ) -> impl Iterator<Item = &Pubkey> + 'a {
+    ) -> impl Iterator<Item = &'a Pubkey> + 'a {
         self.0
             .iter()
             .filter(move |(node, bloom_filter)| {

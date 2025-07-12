@@ -8,8 +8,8 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-curve25519-dalek = "3.2.1"
-solana-zk-sdk = "2.2.1"
+curve25519-dalek = "4.2.0"
+solana-zk-sdk = "2.0.0"
 thiserror = "1.0.65"
 
 [dev-dependencies]

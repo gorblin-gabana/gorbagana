@@ -330,7 +330,7 @@ impl BanksClient {
     pub fn process_transactions<'a, T: Into<VersionedTransaction> + 'a>(
         &'a mut self,
         transactions: Vec<T>,
-    ) -> impl Future<Output = Result<(), BanksClientError>> + '_ {
+    ) -> impl Future<Output = Result<(), BanksClientError>> + 'a {
         self.process_transactions_with_commitment(transactions, CommitmentLevel::default())
     }
 

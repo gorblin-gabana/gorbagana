@@ -1,11 +1,18 @@
-use {super::*, spl_token_2022::extension::transfer_fee::instruction::TransferFeeInstruction};
+use {
+    super::*,
+    spl_token_2022::{
+        extension::transfer_fee::instruction::TransferFeeInstruction,
+    },
+};
 
 pub(in crate::parse_token) fn parse_transfer_fee_instruction(
-    transfer_fee_instruction: TransferFeeInstruction,
+    instruction_data: &[u8],
     account_indexes: &[u8],
     account_keys: &AccountKeys,
 ) -> Result<ParsedInstructionEnum, ParseInstructionError> {
-    match transfer_fee_instruction {
+    match TransferFeeInstruction::unpack(instruction_data)
+        .map_err(|_| ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken))?
+    {
         TransferFeeInstruction::InitializeTransferFeeConfig {
             transfer_fee_config_authority,
             withdraw_withheld_authority,

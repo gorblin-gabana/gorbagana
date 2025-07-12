@@ -25,14 +25,19 @@ pub(in crate::parse_token) fn parse_interest_bearing_mint_instruction(
             } = *decode_instruction_data(instruction_data).map_err(|_| {
                 ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken)
             })?;
-            let rate_authority: Option<Pubkey> = rate_authority.into();
+            let rate_authority: Option<spl_token_2022::solana_program::pubkey::Pubkey> = rate_authority.into();
+            let mut value = json!({
+                "mint": account_keys[account_indexes[0] as usize].to_string(),
+                "rate": i16::from(rate),
+            });
+            let map = value.as_object_mut().unwrap();
+            if let Some(inner_pubkey) = rate_authority {
+                let authority_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
+                map.insert("rateAuthority".to_string(), json!(authority_pubkey.to_string()));
+            }
             Ok(ParsedInstructionEnum {
                 instruction_type: "initializeInterestBearingConfig".to_string(),
-                info: json!({
-                    "mint": account_keys[account_indexes[0] as usize].to_string(),
-                    "rateAuthority": rate_authority.map(|pubkey| pubkey.to_string()),
-                    "rate": i16::from(rate),
-                }),
+                info: value,
             })
         }
         InterestBearingMintInstruction::UpdateRate => {

@@ -26,13 +26,15 @@ pub(in crate::parse_token) fn parse_group_member_pointer_instruction(
                 "mint": account_keys[account_indexes[0] as usize].to_string(),
             });
             let map = value.as_object_mut().unwrap();
-            if let Some(authority) = Option::<Pubkey>::from(authority) {
-                map.insert("authority".to_string(), json!(authority.to_string()));
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(authority) {
+                let authority_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
+                map.insert("authority".to_string(), json!(authority_pubkey.to_string()));
             }
-            if let Some(member_address) = Option::<Pubkey>::from(member_address) {
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(member_address) {
+                let member_address_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
                 map.insert(
                     "memberAddress".to_string(),
-                    json!(member_address.to_string()),
+                    json!(member_address_pubkey.to_string()),
                 );
             }
             Ok(ParsedInstructionEnum {
@@ -50,10 +52,11 @@ pub(in crate::parse_token) fn parse_group_member_pointer_instruction(
                 "mint": account_keys[account_indexes[0] as usize].to_string(),
             });
             let map = value.as_object_mut().unwrap();
-            if let Some(member_address) = Option::<Pubkey>::from(member_address) {
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(member_address) {
+                let member_address_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
                 map.insert(
                     "memberAddress".to_string(),
-                    json!(member_address.to_string()),
+                    json!(member_address_pubkey.to_string()),
                 );
             }
             parse_signers(

@@ -8,7 +8,7 @@ use {
         fs,
         os::raw::{c_int, c_uint},
         path::{Path, PathBuf},
-        sync::Once,
+        sync::{Once, OnceLock},
     },
 };
 
@@ -81,19 +81,15 @@ pub struct Api<'a> {
         Symbol<'a, unsafe extern "C" fn(packed_ge: *const u8) -> c_int>,
 }
 
-static mut API: Option<Container<Api>> = None;
+static API: OnceLock<Container<Api>> = OnceLock::new();
 
 fn init(name: &OsStr) {
-    static INIT_HOOK: Once = Once::new();
-
     info!("Loading {:?}", name);
     unsafe {
-        INIT_HOOK.call_once(|| {
-            API = Some(Container::load(name).unwrap_or_else(|err| {
-                error!("Unable to load {:?}: {}", name, err);
-                std::process::exit(1);
-            }));
-        })
+        API.set(Container::load(name).unwrap_or_else(|err| {
+            error!("Unable to load {:?}: {}", name, err);
+            std::process::exit(1);
+        })).ok();
     }
 }
 
@@ -184,5 +180,5 @@ pub fn api() -> Option<&'static Container<Api<'static>>> {
         })
     }
 
-    unsafe { API.as_ref() }
+    API.get()
 }

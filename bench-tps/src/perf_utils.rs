@@ -17,6 +17,7 @@ pub struct SampleStats {
     /// Maximum TPS reported by this node
     pub tps: f32,
     /// Total time taken for those txs
+    #[allow(dead_code)]
     pub elapsed: Duration,
     /// Total transactions reported by this node
     pub txs: u64,

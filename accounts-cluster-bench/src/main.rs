@@ -160,15 +160,34 @@ fn make_create_message(
                 &program_id,
             )];
             if let Some(mint_address) = mint {
-                instructions.push(
-                    spl_token::instruction::initialize_account(
-                        &spl_token::id(),
-                        &to_pubkey,
-                        &mint_address,
-                        &base_keypair.pubkey(),
-                    )
-                    .unwrap(),
-                );
+                // Convert solana_sdk::pubkey::Pubkey to __Pubkey for spl_token instruction
+                let spl_token_program_id = spl_token::solana_program::pubkey::Pubkey::new_from_array(spl_token::id().to_bytes());
+                let spl_to_pubkey = spl_token::solana_program::pubkey::Pubkey::new_from_array(to_pubkey.to_bytes());
+                let spl_mint_address = spl_token::solana_program::pubkey::Pubkey::new_from_array(mint_address.to_bytes());
+                let spl_base_pubkey = spl_token::solana_program::pubkey::Pubkey::new_from_array(base_keypair.pubkey().to_bytes());
+                
+                let spl_instruction = spl_token::instruction::initialize_account(
+                    &spl_token_program_id,
+                    &spl_to_pubkey,
+                    &spl_mint_address,
+                    &spl_base_pubkey,
+                )
+                .unwrap();
+                
+                // Convert spl_token instruction to solana_sdk instruction
+                let sdk_instruction = solana_sdk::instruction::Instruction {
+                    program_id: Pubkey::new_from_array(spl_instruction.program_id.to_bytes()),
+                    accounts: spl_instruction.accounts.into_iter().map(|acc| {
+                        solana_sdk::instruction::AccountMeta {
+                            pubkey: Pubkey::new_from_array(acc.pubkey.to_bytes()),
+                            is_signer: acc.is_signer,
+                            is_writable: acc.is_writable,
+                        }
+                    }).collect(),
+                    data: spl_instruction.data,
+                };
+                
+                instructions.push(sdk_instruction);
             }
 
             instructions
@@ -203,16 +222,35 @@ fn make_close_message(
             let address =
                 Pubkey::create_with_seed(&base_keypair.pubkey(), &seed, &program_id).unwrap();
             if spl_token {
-                Some(
-                    spl_token::instruction::close_account(
-                        &spl_token::id(),
-                        &address,
-                        &keypair.pubkey(),
-                        &base_keypair.pubkey(),
-                        &[],
-                    )
-                    .unwrap(),
+                // Convert solana_sdk::pubkey::Pubkey to __Pubkey for spl_token instruction
+                let spl_token_program_id = spl_token::solana_program::pubkey::Pubkey::new_from_array(spl_token::id().to_bytes());
+                let spl_address = spl_token::solana_program::pubkey::Pubkey::new_from_array(address.to_bytes());
+                let spl_keypair_pubkey = spl_token::solana_program::pubkey::Pubkey::new_from_array(keypair.pubkey().to_bytes());
+                let spl_base_pubkey = spl_token::solana_program::pubkey::Pubkey::new_from_array(base_keypair.pubkey().to_bytes());
+                
+                let spl_instruction = spl_token::instruction::close_account(
+                    &spl_token_program_id,
+                    &spl_address,
+                    &spl_keypair_pubkey,
+                    &spl_base_pubkey,
+                    &[],
                 )
+                .unwrap();
+                
+                // Convert spl_token instruction to solana_sdk instruction
+                let sdk_instruction = solana_sdk::instruction::Instruction {
+                    program_id: Pubkey::new_from_array(spl_instruction.program_id.to_bytes()),
+                    accounts: spl_instruction.accounts.into_iter().map(|acc| {
+                        solana_sdk::instruction::AccountMeta {
+                            pubkey: Pubkey::new_from_array(acc.pubkey.to_bytes()),
+                            is_signer: acc.is_signer,
+                            is_writable: acc.is_writable,
+                        }
+                    }).collect(),
+                    data: spl_instruction.data,
+                };
+                
+                Some(sdk_instruction)
             } else {
                 Some(system_instruction::transfer_with_seed(
                     &address,

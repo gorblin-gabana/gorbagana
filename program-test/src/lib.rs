@@ -1002,7 +1002,7 @@ impl ProgramTestBanksClientExt for BanksClient {
     }
 }
 
-struct DroppableTask<T>(Arc<AtomicBool>, JoinHandle<T>);
+struct DroppableTask<T>(Arc<AtomicBool>, #[allow(dead_code)] JoinHandle<T>);
 
 impl<T> Drop for DroppableTask<T> {
     fn drop(&mut self) {

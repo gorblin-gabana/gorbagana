@@ -80,6 +80,7 @@ macro_rules! inc_new_counter {
             static mut INC_NEW_COUNTER: $crate::counter::Counter =
                 create_counter!($name, $lograte, $metricsrate);
             static INIT_HOOK: std::sync::Once = std::sync::Once::new();
+            #[allow(static_mut_refs)]
             unsafe {
                 INIT_HOOK.call_once(|| {
                     INC_NEW_COUNTER.init();
@@ -220,6 +221,7 @@ mod tests {
         static mut ENV_LOCK: Option<RwLock<()>> = None;
         static INIT_HOOK: Once = Once::new();
 
+        #[allow(static_mut_refs)]
         unsafe {
             INIT_HOOK.call_once(|| {
                 ENV_LOCK = Some(RwLock::new(()));
@@ -250,11 +252,13 @@ mod tests {
         try_init_logger_at_level_info().ok();
         let _readlock = get_env_lock().read();
         static mut COUNTER: Counter = create_counter!("test", 1000, 1);
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER.init();
         }
         let count = 1;
         inc_counter!(COUNTER, Level::Info, count);
+        #[allow(static_mut_refs)]
         unsafe {
             assert_eq!(COUNTER.counts.load(Ordering::Relaxed), 1);
             assert_eq!(COUNTER.times.load(Ordering::Relaxed), 1);
@@ -265,10 +269,12 @@ mod tests {
         for _ in 0..199 {
             inc_counter!(COUNTER, Level::Info, 2);
         }
+        #[allow(static_mut_refs)]
         unsafe {
             assert_eq!(COUNTER.lastlog.load(Ordering::Relaxed), 397);
         }
         inc_counter!(COUNTER, Level::Info, 2);
+        #[allow(static_mut_refs)]
         unsafe {
             assert_eq!(COUNTER.lastlog.load(Ordering::Relaxed), 399);
         }
@@ -281,6 +287,7 @@ mod tests {
         let _readlock = get_env_lock().read();
         env::remove_var("SOLANA_DEFAULT_METRICS_RATE");
         static mut COUNTER: Counter = create_counter!("test", 1000, 0);
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER.init();
             assert_eq!(
@@ -297,6 +304,7 @@ mod tests {
         let _writelock = get_env_lock().write();
         env::set_var("SOLANA_DEFAULT_METRICS_RATE", "50");
         static mut COUNTER: Counter = create_counter!("test", 1000, 0);
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER.init();
             assert_eq!(COUNTER.metricsrate.load(Ordering::Relaxed), 50);
@@ -327,6 +335,7 @@ mod tests {
             DEFAULT_LOG_RATE,
         );
         static mut COUNTER: Counter = create_counter!("test_lograte", 0, 1);
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER.init();
             assert_eq!(COUNTER.lograte.load(Ordering::Relaxed), DEFAULT_LOG_RATE);
@@ -341,6 +350,7 @@ mod tests {
         let _writelock = get_env_lock().write();
         static mut COUNTER: Counter = create_counter!("test_lograte_env", 0, 1);
         env::set_var("SOLANA_DEFAULT_LOG_RATE", "50");
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER.init();
             assert_eq!(COUNTER.lograte.load(Ordering::Relaxed), 50);
@@ -348,6 +358,7 @@ mod tests {
 
         static mut COUNTER2: Counter = create_counter!("test_lograte_env", 0, 1);
         env::set_var("SOLANA_DEFAULT_LOG_RATE", "0");
+        #[allow(static_mut_refs)]
         unsafe {
             COUNTER2.init();
             assert_eq!(COUNTER2.lograte.load(Ordering::Relaxed), DEFAULT_LOG_RATE);

@@ -13,13 +13,14 @@ use {
     solana_sdk::{
         instruction::{AccountMeta, CompiledInstruction, Instruction},
         message::AccountKeys,
+        pubkey::Pubkey,
     },
     spl_token_2022::{
         extension::ExtensionType,
         instruction::{AuthorityType, TokenInstruction},
         solana_program::{
             instruction::Instruction as SplTokenInstruction, program_option::COption,
-            pubkey::Pubkey,
+            pubkey::Pubkey as SplPubkey,
         },
     },
 };
@@ -510,9 +511,14 @@ pub fn parse_token(
                 account_keys,
             )
         }
-        TokenInstruction::TransferFeeExtension(transfer_fee_instruction) => {
+        TokenInstruction::TransferFeeExtension => {
+            if instruction.data.len() < 2 {
+                return Err(ParseInstructionError::InstructionNotParsable(
+                    ParsableProgram::SplToken,
+                ));
+            }
             parse_transfer_fee_instruction(
-                transfer_fee_instruction,
+                &instruction.data[1..],
                 &instruction.accounts,
                 account_keys,
             )
@@ -822,12 +828,18 @@ fn check_num_token_accounts(accounts: &[u8], num: usize) -> Result<(), ParseInst
 #[deprecated(since = "1.16.0", note = "Instruction conversions no longer needed")]
 pub fn spl_token_instruction(instruction: SplTokenInstruction) -> Instruction {
     Instruction {
-        program_id: instruction.program_id,
+        program_id: {
+            let bytes = instruction.program_id.to_bytes();
+            Pubkey::new_from_array(bytes)
+        },
         accounts: instruction
             .accounts
             .iter()
             .map(|meta| AccountMeta {
-                pubkey: meta.pubkey,
+                pubkey: {
+                    let bytes = meta.pubkey.to_bytes();
+                    Pubkey::new_from_array(bytes)
+                },
                 is_signer: meta.is_signer,
                 is_writable: meta.is_writable,
             })
@@ -836,7 +848,7 @@ pub fn spl_token_instruction(instruction: SplTokenInstruction) -> Instruction {
     }
 }
 
-fn map_coption_pubkey(pubkey: COption<Pubkey>) -> Option<String> {
+fn map_coption_pubkey(pubkey: COption<SplPubkey>) -> Option<String> {
     match pubkey {
         COption::Some(pubkey) => Some(pubkey.to_string()),
         COption::None => None,

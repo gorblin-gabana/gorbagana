@@ -576,7 +576,7 @@ impl Drop for SubscriptionTokenInner {
 }
 
 #[derive(Clone)]
-pub struct SubscriptionToken(Arc<SubscriptionTokenInner>, CounterToken);
+pub struct SubscriptionToken(Arc<SubscriptionTokenInner>, #[allow(dead_code)] CounterToken);
 
 impl SubscriptionToken {
     pub fn id(&self) -> SubscriptionId {
