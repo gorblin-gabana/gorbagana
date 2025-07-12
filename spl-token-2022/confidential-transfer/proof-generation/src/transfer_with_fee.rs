@@ -21,6 +21,7 @@ use {
     },
 };
 
+
 const MAX_FEE_BASIS_POINTS: u64 = 10_000;
 const ONE_IN_BASIS_POINTS: u128 = MAX_FEE_BASIS_POINTS as u128;
 
@@ -189,13 +190,13 @@ pub fn transfer_with_fee_split_proof_data(
     // compute claimed and real delta commitment
     let (claimed_commitment, claimed_opening) = Pedersen::new(delta_fee);
     let (delta_commitment, delta_opening) = compute_delta_commitment_and_opening(
-        (
-            &combined_transfer_amount_commitment,
-            &combined_transfer_amount_opening,
-        ),
-        (&combined_fee_commitment, &combined_fee_opening),
-        transfer_fee_basis_points,
-    );
+        &combined_transfer_amount_commitment,
+        &combined_fee_commitment,
+        &combined_transfer_amount_opening,
+        &combined_fee_opening,
+        transfer_fee_maximum_fee,
+        transfer_fee_basis_points as u64, // <-- fix here
+    )?;
 
     // generate fee sigma proof
     let percentage_with_cap_proof_data = PercentageWithCapProofData::new(
@@ -327,15 +328,20 @@ fn calculate_fee(transfer_amount: u64, fee_rate_basis_points: u16) -> Option<(u6
 
 #[allow(clippy::arithmetic_side_effects)]
 fn compute_delta_commitment_and_opening(
-    (combined_commitment, combined_opening): (&PedersenCommitment, &PedersenOpening),
-    (combined_fee_commitment, combined_fee_opening): (&PedersenCommitment, &PedersenOpening),
-    fee_rate_basis_points: u16,
+    combined_commitment: &PedersenCommitment,
+    combined_fee_commitment: &PedersenCommitment,
+    combined_opening: &PedersenOpening,
+    combined_fee_opening: &PedersenOpening,
+    fee_rate_basis_points: u64, // already correct type
 ) -> (PedersenCommitment, PedersenOpening) {
     let fee_rate_scalar = Scalar::from(fee_rate_basis_points);
-    let delta_commitment = combined_fee_commitment * Scalar::from(MAX_FEE_BASIS_POINTS)
-        - combined_commitment * fee_rate_scalar;
-    let delta_opening = combined_fee_opening * Scalar::from(MAX_FEE_BASIS_POINTS)
-        - combined_opening * fee_rate_scalar;
+    let max_fee_scalar = Scalar::from(MAX_FEE_BASIS_POINTS);
+
+    let delta_commitment =
+        combined_fee_commitment * max_fee_scalar - combined_commitment * fee_rate_scalar;
+
+    let delta_opening =
+        combined_fee_opening * max_fee_scalar - combined_opening * fee_rate_scalar;
 
     (delta_commitment, delta_opening)
 }

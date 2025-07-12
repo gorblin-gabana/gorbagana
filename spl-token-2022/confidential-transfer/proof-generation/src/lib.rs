@@ -64,8 +64,8 @@ pub fn try_combine_lo_hi_ciphertexts(
     ciphertext_hi: &ElGamalCiphertext,
     bit_length: usize,
 ) -> Option<ElGamalCiphertext> {
-    let two_power = 1_u64.checked_shl(bit_length as u32)?;
-    Some(ciphertext_lo + ciphertext_hi * Scalar::from(two_power))
+    let two_power = Scalar::from(1u64.checked_shl(bit_length as u32)?);
+    Some(ciphertext_lo + &(ciphertext_hi * two_power))
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -74,8 +74,8 @@ pub fn try_combine_lo_hi_commitments(
     comm_hi: &PedersenCommitment,
     bit_length: usize,
 ) -> Option<PedersenCommitment> {
-    let two_power = 1_u64.checked_shl(bit_length as u32)?;
-    Some(comm_lo + comm_hi * Scalar::from(two_power))
+    let two_power = Scalar::from(1u64.checked_shl(bit_length as u32)?);
+    Some(comm_lo + &(comm_hi * two_power))
 }
 
 #[allow(clippy::arithmetic_side_effects)]
@@ -84,6 +84,6 @@ pub fn try_combine_lo_hi_openings(
     opening_hi: &PedersenOpening,
     bit_length: usize,
 ) -> Option<PedersenOpening> {
-    let two_power = 1_u64.checked_shl(bit_length as u32)?;
-    Some(opening_lo + opening_hi * Scalar::from(two_power))
+    let two_power = Scalar::from(1u64.checked_shl(bit_length as u32)?);
+    Some(opening_lo + &(opening_hi * two_power))
 }
