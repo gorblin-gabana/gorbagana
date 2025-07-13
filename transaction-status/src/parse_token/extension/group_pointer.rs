@@ -26,11 +26,13 @@ pub(in crate::parse_token) fn parse_group_pointer_instruction(
                 "mint": account_keys[account_indexes[0] as usize].to_string(),
             });
             let map = value.as_object_mut().unwrap();
-            if let Some(authority) = Option::<Pubkey>::from(authority) {
-                map.insert("authority".to_string(), json!(authority.to_string()));
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(authority) {
+                let authority_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
+                map.insert("authority".to_string(), json!(authority_pubkey.to_string()));
             }
-            if let Some(group_address) = Option::<Pubkey>::from(group_address) {
-                map.insert("groupAddress".to_string(), json!(group_address.to_string()));
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(group_address) {
+                let group_address_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
+                map.insert("groupAddress".to_string(), json!(group_address_pubkey.to_string()));
             }
             Ok(ParsedInstructionEnum {
                 instruction_type: "initializeGroupPointer".to_string(),
@@ -47,8 +49,9 @@ pub(in crate::parse_token) fn parse_group_pointer_instruction(
                 "mint": account_keys[account_indexes[0] as usize].to_string(),
             });
             let map = value.as_object_mut().unwrap();
-            if let Some(group_address) = Option::<Pubkey>::from(group_address) {
-                map.insert("groupAddress".to_string(), json!(group_address.to_string()));
+            if let Some(inner_pubkey) = Option::<spl_token_2022::solana_program::pubkey::Pubkey>::from(group_address) {
+                let group_address_pubkey = Pubkey::new_from_array(inner_pubkey.to_bytes());
+                map.insert("groupAddress".to_string(), json!(group_address_pubkey.to_string()));
             }
             parse_signers(
                 map,

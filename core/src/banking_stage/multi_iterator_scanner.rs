@@ -84,6 +84,7 @@ where
 
 pub struct PayloadAndAlreadyHandled<U> {
     pub payload: U,
+    #[allow(dead_code)]
     pub already_handled: Vec<bool>,
 }
 

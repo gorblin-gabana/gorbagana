@@ -1295,7 +1295,8 @@ fn test_snapshot_restart_tower() {
     let validator_archive_path = snapshot_utils::build_full_snapshot_archive_path(
         validator_snapshot_test_config
             .full_snapshot_archives_dir
-            .into_path(),
+            .keep()
+            .unwrap(),
         full_snapshot_archive_info.slot(),
         full_snapshot_archive_info.hash(),
         full_snapshot_archive_info.archive_format(),
@@ -1366,7 +1367,8 @@ fn test_snapshots_blockstore_floor() {
     let validator_archive_path = snapshot_utils::build_full_snapshot_archive_path(
         validator_snapshot_test_config
             .full_snapshot_archives_dir
-            .into_path(),
+            .keep()
+            .unwrap(),
         archive_info.slot(),
         archive_info.hash(),
         validator_snapshot_test_config

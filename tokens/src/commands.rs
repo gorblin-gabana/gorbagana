@@ -341,7 +341,12 @@ fn build_messages(
                 .iter()
                 .map(|x| {
                     let wallet_address = x.recipient;
-                    get_associated_token_address(&wallet_address, &spl_token_args.mint)
+                    // Convert solana_sdk::pubkey::Pubkey to __Pubkey for spl functions
+                    let spl_wallet_address = spl_token::solana_program::pubkey::Pubkey::new_from_array(wallet_address.to_bytes());
+                    let spl_mint = spl_token::solana_program::pubkey::Pubkey::new_from_array(spl_token_args.mint.to_bytes());
+                    let associated_token_address = get_associated_token_address(&spl_wallet_address, &spl_mint);
+                    // Convert back to solana_sdk::pubkey::Pubkey for client call
+                    solana_sdk::pubkey::Pubkey::new_from_array(associated_token_address.to_bytes())
                 })
                 .collect::<Vec<_>>();
             let mut maybe_accounts = client.get_multiple_accounts(&associated_token_addresses)?;

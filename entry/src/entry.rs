@@ -35,7 +35,7 @@ use {
         cmp,
         ffi::OsStr,
         iter::repeat_with,
-        sync::{Arc, Mutex, Once},
+        sync::{Arc, Mutex, Once, OnceLock},
         thread::{self, JoinHandle},
         time::Instant,
     },
@@ -54,32 +54,28 @@ lazy_static! {
 pub type EntrySender = Sender<Vec<Entry>>;
 pub type EntryReceiver = Receiver<Vec<Entry>>;
 
-static mut API: Option<Container<Api>> = None;
+static API: OnceLock<Container<Api>> = OnceLock::new();
 
 pub fn init_poh() {
     init(OsStr::new("libpoh-simd.so"));
 }
 
 fn init(name: &OsStr) {
-    static INIT_HOOK: Once = Once::new();
-
     info!("Loading {:?}", name);
-    unsafe {
-        INIT_HOOK.call_once(|| {
-            let path;
-            let lib_name = if let Some(perf_libs_path) = solana_perf::perf_libs::locate_perf_libs()
-            {
-                solana_perf::perf_libs::append_to_ld_library_path(
-                    perf_libs_path.to_str().unwrap_or("").to_string(),
-                );
-                path = perf_libs_path.join(name);
-                path.as_os_str()
-            } else {
-                name
-            };
+    let path;
+    let lib_name = if let Some(perf_libs_path) = solana_perf::perf_libs::locate_perf_libs()
+    {
+        solana_perf::perf_libs::append_to_ld_library_path(
+            perf_libs_path.to_str().unwrap_or("").to_string(),
+        );
+        path = perf_libs_path.join(name);
+        path.as_os_str()
+    } else {
+        name
+    };
 
-            API = Container::load(lib_name).ok();
-        })
+    if let Ok(container) = unsafe { Container::load(lib_name) } {
+        API.set(container).ok();
     }
 }
 
@@ -93,7 +89,7 @@ pub fn api() -> Option<&'static Container<Api<'static>>> {
         })
     }
 
-    unsafe { API.as_ref() }
+    API.get()
 }
 
 #[derive(SymBorApi)]

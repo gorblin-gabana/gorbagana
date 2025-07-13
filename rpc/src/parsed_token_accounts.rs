@@ -82,8 +82,15 @@ where
 /// Analyze a mint Pubkey that may be the native_mint and get the mint-account owner (token
 /// program_id) and decimals
 pub fn get_mint_owner_and_decimals(bank: &Bank, mint: &Pubkey) -> Result<(Pubkey, u8)> {
-    if mint == &spl_token::native_mint::id() {
-        Ok((spl_token::id(), spl_token::native_mint::DECIMALS))
+    // Convert spl_token native mint to solana_sdk::pubkey::Pubkey for comparison
+    let native_mint_bytes = spl_token::native_mint::id().to_bytes();
+    let native_mint_pubkey = Pubkey::new_from_array(native_mint_bytes);
+    
+    if mint == &native_mint_pubkey {
+        // Convert spl_token::id() to solana_sdk::pubkey::Pubkey
+        let token_program_bytes = spl_token::id().to_bytes();
+        let token_program_pubkey = Pubkey::new_from_array(token_program_bytes);
+        Ok((token_program_pubkey, spl_token::native_mint::DECIMALS))
     } else {
         let mint_account = bank.get_account(mint).ok_or_else(|| {
             Error::invalid_params("Invalid param: could not find mint".to_string())

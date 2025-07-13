@@ -622,13 +622,46 @@ fn transfer_with_compute_unit_price_and_padding(
     let from_pubkey = from_keypair.pubkey();
     let transfer_instruction = system_instruction::transfer(&from_pubkey, to, lamports);
     let instruction = if let Some(instruction_padding_config) = instruction_padding_config {
-        wrap_instruction(
-            instruction_padding_config.program_id,
-            transfer_instruction,
+        // Convert solana_sdk types to spl_instruction_padding types
+        let spl_program_id = spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+            instruction_padding_config.program_id.to_bytes()
+        );
+        let spl_instruction = spl_instruction_padding::solana_program::instruction::Instruction {
+            program_id: spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+                transfer_instruction.program_id.to_bytes()
+            ),
+            accounts: transfer_instruction.accounts.into_iter().map(|acc| {
+                spl_instruction_padding::solana_program::instruction::AccountMeta {
+                    pubkey: spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+                        acc.pubkey.to_bytes()
+                    ),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                }
+            }).collect(),
+            data: transfer_instruction.data,
+        };
+        
+        let wrapped_spl_instruction = wrap_instruction(
+            spl_program_id,
+            spl_instruction,
             vec![],
             instruction_padding_config.data_size,
         )
-        .expect("Could not create padded instruction")
+        .expect("Could not create padded instruction");
+        
+        // Convert back to solana_sdk types
+        Instruction {
+            program_id: Pubkey::new_from_array(wrapped_spl_instruction.program_id.to_bytes()),
+            accounts: wrapped_spl_instruction.accounts.into_iter().map(|acc| {
+                solana_sdk::instruction::AccountMeta {
+                    pubkey: Pubkey::new_from_array(acc.pubkey.to_bytes()),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                }
+            }).collect(),
+            data: wrapped_spl_instruction.data,
+        }
     } else {
         transfer_instruction
     };
@@ -731,13 +764,46 @@ fn nonced_transfer_with_padding(
     let from_pubkey = from_keypair.pubkey();
     let transfer_instruction = system_instruction::transfer(&from_pubkey, to, lamports);
     let instruction = if let Some(instruction_padding_config) = instruction_padding_config {
-        wrap_instruction(
-            instruction_padding_config.program_id,
-            transfer_instruction,
+        // Convert solana_sdk types to spl_instruction_padding types
+        let spl_program_id = spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+            instruction_padding_config.program_id.to_bytes()
+        );
+        let spl_instruction = spl_instruction_padding::solana_program::instruction::Instruction {
+            program_id: spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+                transfer_instruction.program_id.to_bytes()
+            ),
+            accounts: transfer_instruction.accounts.into_iter().map(|acc| {
+                spl_instruction_padding::solana_program::instruction::AccountMeta {
+                    pubkey: spl_instruction_padding::solana_program::pubkey::Pubkey::new_from_array(
+                        acc.pubkey.to_bytes()
+                    ),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                }
+            }).collect(),
+            data: transfer_instruction.data,
+        };
+        
+        let wrapped_spl_instruction = wrap_instruction(
+            spl_program_id,
+            spl_instruction,
             vec![],
             instruction_padding_config.data_size,
         )
-        .expect("Could not create padded instruction")
+        .expect("Could not create padded instruction");
+        
+        // Convert back to solana_sdk types
+        Instruction {
+            program_id: Pubkey::new_from_array(wrapped_spl_instruction.program_id.to_bytes()),
+            accounts: wrapped_spl_instruction.accounts.into_iter().map(|acc| {
+                solana_sdk::instruction::AccountMeta {
+                    pubkey: Pubkey::new_from_array(acc.pubkey.to_bytes()),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                }
+            }).collect(),
+            data: wrapped_spl_instruction.data,
+        }
     } else {
         transfer_instruction
     };

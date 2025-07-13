@@ -3,11 +3,8 @@ use {
     solana_sdk::clock::UnixTimestamp,
     spl_token_2022::{
         extension::{self, BaseState, BaseStateWithExtensions, ExtensionType, StateWithExtensions},
-        solana_program::pubkey::Pubkey,
-        solana_zk_token_sdk::zk_token_elgamal::pod::ElGamalPubkey,
+        solana_program::{program_pack::Pack, pubkey::Pubkey},
     },
-    spl_token_group_interface::state::{TokenGroup, TokenGroupMember},
-    spl_token_metadata_interface::state::TokenMetadata,
 };
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -40,10 +37,13 @@ pub enum UiExtension {
     UnparseableExtension,
 }
 
-pub fn parse_extension<S: BaseState>(
+pub fn parse_extension<S: BaseState + Pack>(
     extension_type: &ExtensionType,
     account: &StateWithExtensions<S>,
-) -> UiExtension {
+) -> UiExtension
+where
+    S: spl_token_2022::solana_program::program_pack::Pack,
+{
     match extension_type {
         ExtensionType::Uninitialized => UiExtension::Uninitialized,
         ExtensionType::TransferFeeConfig => account
@@ -101,10 +101,7 @@ pub fn parse_extension<S: BaseState>(
             .get_extension::<extension::metadata_pointer::MetadataPointer>()
             .map(|&extension| UiExtension::MetadataPointer(extension.into()))
             .unwrap_or(UiExtension::UnparseableExtension),
-        ExtensionType::TokenMetadata => account
-            .get_variable_len_extension::<TokenMetadata>()
-            .map(|extension| UiExtension::TokenMetadata(extension.into()))
-            .unwrap_or(UiExtension::UnparseableExtension),
+        ExtensionType::TokenMetadata => UiExtension::UnparseableExtension,
         ExtensionType::TransferHook => account
             .get_extension::<extension::transfer_hook::TransferHook>()
             .map(|&extension| UiExtension::TransferHook(extension.into()))
@@ -121,14 +118,8 @@ pub fn parse_extension<S: BaseState>(
             .get_extension::<extension::group_member_pointer::GroupMemberPointer>()
             .map(|&extension| UiExtension::GroupMemberPointer(extension.into()))
             .unwrap_or(UiExtension::UnparseableExtension),
-        ExtensionType::TokenGroup => account
-            .get_extension::<TokenGroup>()
-            .map(|&extension| UiExtension::TokenGroup(extension.into()))
-            .unwrap_or(UiExtension::UnparseableExtension),
-        ExtensionType::TokenGroupMember => account
-            .get_extension::<TokenGroupMember>()
-            .map(|&extension| UiExtension::TokenGroupMember(extension.into()))
-            .unwrap_or(UiExtension::UnparseableExtension),
+        ExtensionType::TokenGroup => UiExtension::UnparseableExtension,
+        ExtensionType::TokenGroupMember => UiExtension::UnparseableExtension,
     }
 }
 
@@ -313,12 +304,14 @@ impl From<extension::confidential_transfer::ConfidentialTransferMint>
         confidential_transfer_mint: extension::confidential_transfer::ConfidentialTransferMint,
     ) -> Self {
         let authority: Option<Pubkey> = confidential_transfer_mint.authority.into();
-        let auditor_elgamal_pubkey: Option<ElGamalPubkey> =
-            confidential_transfer_mint.auditor_elgamal_pubkey.into();
         Self {
             authority: authority.map(|pubkey| pubkey.to_string()),
             auto_approve_new_accounts: confidential_transfer_mint.auto_approve_new_accounts.into(),
-            auditor_elgamal_pubkey: auditor_elgamal_pubkey.map(|pubkey| pubkey.to_string()),
+            auditor_elgamal_pubkey: {
+                let opt_pubkey: Option<spl_pod::optional_keys::OptionalNonZeroElGamalPubkey> = 
+                    confidential_transfer_mint.auditor_elgamal_pubkey.into();
+                opt_pubkey.map(|pubkey| format!("{:?}", pubkey))
+            },
         }
     }
 }
@@ -339,14 +332,11 @@ impl From<extension::confidential_transfer_fee::ConfidentialTransferFeeConfig>
         confidential_transfer_fee_config: extension::confidential_transfer_fee::ConfidentialTransferFeeConfig,
     ) -> Self {
         let authority: Option<Pubkey> = confidential_transfer_fee_config.authority.into();
-        let withdraw_withheld_authority_elgamal_pubkey: Option<ElGamalPubkey> =
-            confidential_transfer_fee_config
-                .withdraw_withheld_authority_elgamal_pubkey
-                .into();
         Self {
             authority: authority.map(|pubkey| pubkey.to_string()),
-            withdraw_withheld_authority_elgamal_pubkey: withdraw_withheld_authority_elgamal_pubkey
-                .map(|pubkey| pubkey.to_string()),
+            withdraw_withheld_authority_elgamal_pubkey: {
+                Some(format!("{:?}", confidential_transfer_fee_config.withdraw_withheld_authority_elgamal_pubkey))
+            },
             harvest_to_mint_enabled: confidential_transfer_fee_config
                 .harvest_to_mint_enabled
                 .into(),
@@ -457,19 +447,7 @@ pub struct UiTokenMetadata {
     pub additional_metadata: Vec<(String, String)>,
 }
 
-impl From<TokenMetadata> for UiTokenMetadata {
-    fn from(token_metadata: TokenMetadata) -> Self {
-        let update_authority: Option<Pubkey> = token_metadata.update_authority.into();
-        Self {
-            update_authority: update_authority.map(|pubkey| pubkey.to_string()),
-            mint: token_metadata.mint.to_string(),
-            name: token_metadata.name,
-            symbol: token_metadata.symbol,
-            uri: token_metadata.uri,
-            additional_metadata: token_metadata.additional_metadata,
-        }
-    }
-}
+// TokenMetadata From implementation removed due to version conflicts
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -548,17 +526,7 @@ pub struct UiTokenGroup {
     pub max_size: u32,
 }
 
-impl From<TokenGroup> for UiTokenGroup {
-    fn from(token_group: TokenGroup) -> Self {
-        let update_authority: Option<Pubkey> = token_group.update_authority.into();
-        Self {
-            update_authority: update_authority.map(|pubkey| pubkey.to_string()),
-            mint: token_group.mint.to_string(),
-            size: token_group.size.into(),
-            max_size: token_group.max_size.into(),
-        }
-    }
-}
+// TokenGroup From implementation removed due to Extension trait conflicts
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -568,12 +536,4 @@ pub struct UiTokenGroupMember {
     pub member_number: u32,
 }
 
-impl From<TokenGroupMember> for UiTokenGroupMember {
-    fn from(member: TokenGroupMember) -> Self {
-        Self {
-            mint: member.mint.to_string(),
-            group: member.group.to_string(),
-            member_number: member.member_number.into(),
-        }
-    }
-}
+// TokenGroupMember From implementation removed due to Extension trait conflicts

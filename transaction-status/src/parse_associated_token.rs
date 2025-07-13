@@ -2,7 +2,6 @@ use {
     crate::parse_instruction::{
         check_num_accounts, ParsableProgram, ParseInstructionError, ParsedInstructionEnum,
     },
-    borsh::BorshDeserialize,
     serde_json::json,
     solana_sdk::{instruction::CompiledInstruction, message::AccountKeys, pubkey::Pubkey},
     spl_associated_token_account::instruction::AssociatedTokenAccountInstruction,
@@ -30,8 +29,13 @@ pub fn parse_associated_token(
     let ata_instruction = if instruction.data.is_empty() {
         AssociatedTokenAccountInstruction::Create
     } else {
-        AssociatedTokenAccountInstruction::try_from_slice(&instruction.data)
-            .map_err(|_| ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken))?
+        // Parse instruction type from the first byte
+        match instruction.data.first() {
+            Some(0) => AssociatedTokenAccountInstruction::Create,
+            Some(1) => AssociatedTokenAccountInstruction::CreateIdempotent,
+            Some(2) => AssociatedTokenAccountInstruction::RecoverNested,
+            _ => return Err(ParseInstructionError::InstructionNotParsable(ParsableProgram::SplAssociatedTokenAccount)),
+        }
     };
 
     match ata_instruction {

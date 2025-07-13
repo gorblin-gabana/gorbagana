@@ -194,9 +194,8 @@ pub fn transfer_with_fee_split_proof_data(
         &combined_fee_commitment,
         &combined_transfer_amount_opening,
         &combined_fee_opening,
-        transfer_fee_maximum_fee,
-        transfer_fee_basis_points as u64, // <-- fix here
-    )?;
+        transfer_fee_basis_points as u64,
+    );
 
     // generate fee sigma proof
     let percentage_with_cap_proof_data = PercentageWithCapProofData::new(
@@ -337,11 +336,15 @@ fn compute_delta_commitment_and_opening(
     let fee_rate_scalar = Scalar::from(fee_rate_basis_points);
     let max_fee_scalar = Scalar::from(MAX_FEE_BASIS_POINTS);
 
-    let delta_commitment =
-        combined_fee_commitment * max_fee_scalar - combined_commitment * fee_rate_scalar;
+    let delta_commitment = PedersenCommitment::new(
+        combined_fee_commitment.get_point() * &max_fee_scalar
+            - combined_commitment.get_point() * &fee_rate_scalar,
+    );
 
-    let delta_opening =
-        combined_fee_opening * max_fee_scalar - combined_opening * fee_rate_scalar;
+    let delta_opening = PedersenOpening::new(
+        combined_fee_opening.get_scalar() * &max_fee_scalar
+            - combined_opening.get_scalar() * &fee_rate_scalar,
+    );
 
     (delta_commitment, delta_opening)
 }

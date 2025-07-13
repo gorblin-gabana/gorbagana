@@ -26,7 +26,7 @@ use {
 const MAX_INSTRUCTION_ACCOUNTS: u8 = NON_DUP_MARKER;
 
 enum SerializeAccount<'a> {
-    Account(IndexOfAccount, BorrowedAccount<'a>),
+    Account(#[allow(dead_code)] IndexOfAccount, BorrowedAccount<'a>),
     Duplicate(IndexOfAccount),
 }
 
