@@ -119,6 +119,9 @@ members = [
     "wen-restart",
     "zk-keygen",
     "zk-token-sdk",
+    "associated-token-account/client",
+    "associated-token-account/program",
+    "associated-token-account/program-test",
 ]
 
 exclude = ["programs/sbf"]
@@ -388,7 +391,8 @@ solana-zk-keygen = { path = "zk-keygen", version = "=2.0.0" }
 solana-zk-token-proof-program = { path = "programs/zk-token-proof", version = "=2.0.0" }
 solana-zk-token-sdk = { path = "zk-token-sdk", version = "=2.0.0" }
 solana_rbpf = "=0.8.5"
-spl-associated-token-account = "=6.0.0"
+spl-associated-token-account = { path = "associated-token-account/program", version = "=6.0.0" }
+spl-associated-token-account-client = { path = "associated-token-account/client", version = "=2.0.0" }
 spl-instruction-padding = "0.1"
 spl-memo = "=6.0.0"
 spl-pod = { path = "libraries/pod", version = "=0.5.1" }
