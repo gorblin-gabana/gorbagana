@@ -1,19 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# =============================================================================
-# Nginx & SSL Setup Script for Solana RPC
-# =============================================================================
-# This script provides comprehensive nginx setup with:
-# 1. Reverse proxy for Solana RPC (HTTP/HTTPS)
-# 2. WebSocket proxy support
-# 3. SSL/TLS with Let's Encrypt
-# 4. UFW firewall configuration
-# 5. Rate limiting and security headers
-# 6. Domain validation and management
-# =============================================================================
-
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -24,7 +11,7 @@ NC='\033[0m' # No Color
 print_header() {
     echo -e "${BOLD}${BLUE}🌐 =============================================="
     echo -e "   Nginx & SSL Setup for Solana RPC"
-    echo -e "============================================== ${NC}"
+    echo -e "======================================================== ${NC}"
 }
 
 print_info() {
@@ -133,7 +120,6 @@ install_dependencies() {
         nginx \
         ufw \
         curl \
-        dig \
         jq
     
     if [ "$USE_SSL" = true ]; then
@@ -334,40 +320,6 @@ start_nginx() {
     print_success "Nginx started and enabled"
 }
 
-# Validate domain DNS
-validate_domain() {
-    if [ -z "$DOMAIN" ]; then
-        return 0
-    fi
-    
-    print_info "Validating domain DNS configuration..."
-    
-    # Get server IP
-    SERVER_IP=$(curl -s -m 10 ifconfig.me 2>/dev/null || echo "")
-    if [ -z "$SERVER_IP" ]; then
-        print_warning "Could not determine server IP"
-        return 1
-    fi
-    
-    # Check domain resolution
-    DOMAIN_IP=$(dig +short "$DOMAIN" 2>/dev/null | tail -n1)
-    
-    if [ "$SERVER_IP" != "$DOMAIN_IP" ]; then
-        print_warning "Domain $DOMAIN does not resolve to this server IP ($SERVER_IP)"
-        print_warning "Current domain IP: $DOMAIN_IP"
-        print_warning "Please update your DNS records to point $DOMAIN to $SERVER_IP"
-        
-        read -p "Continue anyway? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            return 1
-        fi
-    else
-        print_success "Domain DNS configuration is correct"
-    fi
-    
-    return 0
-}
 
 # Setup SSL with Let's Encrypt
 setup_ssl() {
@@ -571,11 +523,6 @@ main() {
     configure_firewall
     create_nginx_config
     start_nginx
-    
-    if ! validate_domain; then
-        print_error "Domain validation failed"
-        exit 1
-    fi
     
     if ! setup_ssl; then
         print_error "SSL setup failed"
