@@ -17,7 +17,7 @@ name = "solana-net-shaper"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "3.1.5", features = ["cargo"] }
+clap = { workspace = true, features = ["cargo"] }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_derive = { workspace = true }

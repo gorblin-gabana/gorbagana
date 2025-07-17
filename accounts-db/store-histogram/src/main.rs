@@ -1,7 +1,7 @@
 #![allow(clippy::arithmetic_side_effects)]
 use {
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg},
-    std::{fmt::Display, fs, path::PathBuf, str::FromStr},
+    clap::{Arg, Command},
+    std::{fs, path::PathBuf},
 };
 
 struct Bin {
@@ -26,17 +26,6 @@ fn get_stars(x: usize, max: usize, width: usize) -> String {
         s = format!("{s}{}", if i <= percent { "*" } else { " " });
     }
     s
-}
-
-fn is_parsable<T>(string: String) -> Result<(), String>
-where
-    T: FromStr,
-    T::Err: Display,
-{
-    string
-        .parse::<T>()
-        .map(|_| ())
-        .map_err(|err| format!("error parsing '{string}': {err}"))
 }
 
 fn calc(info: &[(usize, usize)], bin_widths: Vec<usize>, offset: i64) {
@@ -253,28 +242,27 @@ fn normal_ancient(offset: i64) -> Vec<usize> {
 }
 
 fn main() {
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .version(env!("CARGO_PKG_VERSION"))
         .arg(
-            Arg::with_name("ledger")
+            Arg::new("ledger")
                 .index(1)
-                .takes_value(true)
                 .value_name("PATH")
-                .help("ledger path"),
+                .help("ledger path")
+                .required(true),
         )
         .arg(
-            Arg::with_name("offset")
+            Arg::new("offset")
                 .long("offset")
-                .takes_value(true)
                 .value_name("SLOT-OFFSET")
-                .validator(is_parsable::<i64>)
+                .value_parser(clap::value_parser!(i64))
                 .help("ancient offset"),
         )
         .get_matches();
 
-    let ledger = value_t_or_exit!(matches, "ledger", String);
-    let offset = value_t!(matches, "offset", i64).unwrap_or(100_000);
+    let ledger = matches.get_one::<String>("ledger").unwrap().clone();
+    let offset = matches.get_one::<i64>("offset").copied().unwrap_or(100_000);
     let path: PathBuf = [&ledger, "accounts", "run"].iter().collect();
 
     if path.is_dir() {
