@@ -3,11 +3,11 @@ use {
         address_lookup_table::*, clap_app::*, cluster_query::*, feature::*, inflation::*, nonce::*,
         program::*, program_v4::*, spend_utils::*, stake::*, validator_info::*, vote::*, wallet::*,
     },
-    clap::{crate_description, crate_name, value_t_or_exit, ArgMatches, Shell},
+    clap::{value_t_or_exit, ArgMatches},
     log::*,
     num_traits::FromPrimitive,
     serde_json::{self, Value},
-    solana_clap_utils::{self, input_parsers::*, keypair::*},
+    solana_clap_v3_utils::{self, input_parsers::*, keypair::*},
     solana_cli_config::ConfigInput,
     solana_cli_output::{
         display::println_name_value, CliSignature, CliValidatorsSortOrder, OutputFormat,
@@ -592,13 +592,13 @@ impl Default for CliConfig<'_> {
 }
 
 pub fn parse_command(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, Box<dyn error::Error>> {
     let response = match matches.subcommand() {
         // Autocompletion Command
-        ("completion", Some(matches)) => {
+        Some(("completion", matches)) => {
             let shell_choice = match matches.value_of("shell") {
                 Some("bash") => Shell::Bash,
                 Some("fish") => Shell::Fish,
@@ -609,52 +609,54 @@ pub fn parse_command(
                 // are restricted
                 _ => unreachable!(),
             };
-            get_clap_app(
-                crate_name!(),
-                crate_description!(),
-                solana_version::version!(),
-            )
-            .gen_completions_to("solana", shell_choice, &mut stdout());
+            use clap_complete::{generate, Shell};
+            let version = solana_version::version!();
+            let mut app = get_clap_app(
+                env!("CARGO_PKG_NAME"),
+                                 env!("CARGO_PKG_DESCRIPTION"),
+                version,
+            );
+            generate(shell_choice, &mut app, "solana", &mut stdout());
             std::process::exit(0);
         }
         // Cluster Query Commands
-        ("block", Some(matches)) => parse_get_block(matches),
-        ("recent-prioritization-fees", Some(matches)) => {
+        Some(("block", matches)) => parse_get_block(matches),
+        Some(("recent-prioritization-fees", matches)) => {
             parse_get_recent_prioritization_fees(matches)
         }
-        ("block-height", Some(matches)) => parse_get_block_height(matches),
-        ("block-production", Some(matches)) => parse_show_block_production(matches),
-        ("block-time", Some(matches)) => parse_get_block_time(matches),
-        ("catchup", Some(matches)) => parse_catchup(matches, wallet_manager),
-        ("cluster-date", Some(_matches)) => {
+        Some(("block-height", matches)) => parse_get_block_height(matches),
+        Some(("block-production", matches)) => parse_show_block_production(matches),
+        Some(("block-time", matches)) => parse_get_block_time(matches),
+        Some(("catchup", matches)) => parse_catchup(matches, wallet_manager),
+        Some(("cluster-date", _matches)) => {
             Ok(CliCommandInfo::without_signers(CliCommand::ClusterDate))
         }
-        ("cluster-version", Some(_matches)) => {
+        Some(("cluster-version", _matches)) => {
             Ok(CliCommandInfo::without_signers(CliCommand::ClusterVersion))
         }
-        ("epoch", Some(matches)) => parse_get_epoch(matches),
-        ("epoch-info", Some(matches)) => parse_get_epoch_info(matches),
-        ("feature", Some(matches)) => {
+        Some(("epoch", matches)) => parse_get_epoch(matches),
+        Some(("epoch-info", matches)) => parse_get_epoch_info(matches),
+        Some(("feature", matches)) => {
             parse_feature_subcommand(matches, default_signer, wallet_manager)
         }
-        ("first-available-block", Some(_matches)) => Ok(CliCommandInfo::without_signers(
+        Some(("first-available-block", _matches)) => Ok(CliCommandInfo::without_signers(
             CliCommand::FirstAvailableBlock,
         )),
-        ("genesis-hash", Some(_matches)) => {
+        Some(("genesis-hash", _matches)) => {
             Ok(CliCommandInfo::without_signers(CliCommand::GetGenesisHash))
         }
-        ("gossip", Some(_matches)) => Ok(CliCommandInfo::without_signers(CliCommand::ShowGossip)),
-        ("inflation", Some(matches)) => {
+        Some(("gossip", _matches)) => Ok(CliCommandInfo::without_signers(CliCommand::ShowGossip)),
+        Some(("inflation", matches)) => {
             parse_inflation_subcommand(matches, default_signer, wallet_manager)
         }
-        ("largest-accounts", Some(matches)) => parse_largest_accounts(matches),
-        ("leader-schedule", Some(matches)) => parse_leader_schedule(matches),
-        ("live-slots", Some(_matches)) => {
+        Some(("largest-accounts", matches)) => parse_largest_accounts(matches),
+        Some(("leader-schedule", matches)) => parse_leader_schedule(matches),
+        Some(("live-slots", _matches)) => {
             Ok(CliCommandInfo::without_signers(CliCommand::LiveSlots))
         }
-        ("logs", Some(matches)) => parse_logs(matches, wallet_manager),
-        ("ping", Some(matches)) => parse_cluster_ping(matches, default_signer, wallet_manager),
-        ("rent", Some(matches)) => {
+        Some(("logs", matches)) => parse_logs(matches, wallet_manager),
+        Some(("ping", matches)) => parse_cluster_ping(matches, default_signer, wallet_manager),
+        Some(("rent", matches)) => {
             let data_length = value_of::<RentLengthValue>(matches, "data_length")
                 .unwrap()
                 .length();
@@ -664,182 +666,182 @@ pub fn parse_command(
                 use_lamports_unit,
             }))
         }
-        ("slot", Some(matches)) => parse_get_slot(matches),
-        ("stakes", Some(matches)) => parse_show_stakes(matches, wallet_manager),
-        ("supply", Some(matches)) => parse_supply(matches),
-        ("total-supply", Some(matches)) => parse_total_supply(matches),
-        ("transaction-count", Some(matches)) => parse_get_transaction_count(matches),
-        ("transaction-history", Some(matches)) => {
+        Some(("slot", matches)) => parse_get_slot(matches),
+        Some(("stakes", matches)) => parse_show_stakes(matches, wallet_manager),
+        Some(("supply", matches)) => parse_supply(matches),
+        Some(("total-supply", matches)) => parse_total_supply(matches),
+        Some(("transaction-count", matches)) => parse_get_transaction_count(matches),
+        Some(("transaction-history", matches)) => {
             parse_transaction_history(matches, wallet_manager)
         }
-        ("validators", Some(matches)) => parse_show_validators(matches),
+        Some(("validators", matches)) => parse_show_validators(matches),
         // Nonce Commands
-        ("authorize-nonce-account", Some(matches)) => {
+        Some(("authorize-nonce-account", matches)) => {
             parse_authorize_nonce_account(matches, default_signer, wallet_manager)
         }
-        ("create-nonce-account", Some(matches)) => {
+        Some(("create-nonce-account", matches)) => {
             parse_nonce_create_account(matches, default_signer, wallet_manager)
         }
-        ("nonce", Some(matches)) => parse_get_nonce(matches, wallet_manager),
-        ("new-nonce", Some(matches)) => parse_new_nonce(matches, default_signer, wallet_manager),
-        ("nonce-account", Some(matches)) => parse_show_nonce_account(matches, wallet_manager),
-        ("withdraw-from-nonce-account", Some(matches)) => {
+        Some(("nonce", matches)) => parse_get_nonce(matches, wallet_manager),
+        Some(("new-nonce", matches)) => parse_new_nonce(matches, default_signer, wallet_manager),
+        Some(("nonce-account", matches)) => parse_show_nonce_account(matches, wallet_manager),
+        Some(("withdraw-from-nonce-account", matches)) => {
             parse_withdraw_from_nonce_account(matches, default_signer, wallet_manager)
         }
-        ("upgrade-nonce-account", Some(matches)) => parse_upgrade_nonce_account(matches),
+        Some(("upgrade-nonce-account", matches)) => parse_upgrade_nonce_account(matches),
         // Program Deployment
-        ("deploy", Some(_matches)) => clap::Error::with_description(
-            "`solana deploy` has been replaced with `solana program deploy`",
+        Some(("deploy", _matches)) => clap::Error::with_description(
+            "`solana deploy` has been replaced with `solana program deploy`".to_string(),
             clap::ErrorKind::UnrecognizedSubcommand,
         )
         .exit(),
-        ("program", Some(matches)) => {
+        Some(("program", matches)) => {
             parse_program_subcommand(matches, default_signer, wallet_manager)
         }
-        ("program-v4", Some(matches)) => {
+        Some(("program-v4", matches)) => {
             parse_program_v4_subcommand(matches, default_signer, wallet_manager)
         }
-        ("address-lookup-table", Some(matches)) => {
+        Some(("address-lookup-table", matches)) => {
             parse_address_lookup_table_subcommand(matches, default_signer, wallet_manager)
         }
-        ("wait-for-max-stake", Some(matches)) => {
+        Some(("wait-for-max-stake", matches)) => {
             let max_stake_percent = value_t_or_exit!(matches, "max_percent", f32);
             Ok(CliCommandInfo::without_signers(
                 CliCommand::WaitForMaxStake { max_stake_percent },
             ))
         }
         // Stake Commands
-        ("create-stake-account", Some(matches)) => {
+        Some(("create-stake-account", matches)) => {
             parse_create_stake_account(matches, default_signer, wallet_manager, !CHECKED)
         }
-        ("create-stake-account-checked", Some(matches)) => {
+        Some(("create-stake-account-checked", matches)) => {
             parse_create_stake_account(matches, default_signer, wallet_manager, CHECKED)
         }
-        ("delegate-stake", Some(matches)) => {
+        Some(("delegate-stake", matches)) => {
             parse_stake_delegate_stake(matches, default_signer, wallet_manager)
         }
-        ("redelegate-stake", _) => {
+        Some(("redelegate-stake", _)) => {
             Err(CliError::CommandNotRecognized(
                 "`redelegate-stake` no longer exists and will be completely removed in a future release".to_string(),
             ))
         }
-        ("withdraw-stake", Some(matches)) => {
+        Some(("withdraw-stake", matches)) => {
             parse_stake_withdraw_stake(matches, default_signer, wallet_manager)
         }
-        ("deactivate-stake", Some(matches)) => {
+        Some(("deactivate-stake", matches)) => {
             parse_stake_deactivate_stake(matches, default_signer, wallet_manager)
         }
-        ("split-stake", Some(matches)) => {
+        Some(("split-stake", matches)) => {
             parse_split_stake(matches, default_signer, wallet_manager)
         }
-        ("merge-stake", Some(matches)) => {
+        Some(("merge-stake", matches)) => {
             parse_merge_stake(matches, default_signer, wallet_manager)
         }
-        ("stake-authorize", Some(matches)) => {
+        Some(("stake-authorize", matches)) => {
             parse_stake_authorize(matches, default_signer, wallet_manager, !CHECKED)
         }
-        ("stake-authorize-checked", Some(matches)) => {
+        Some(("stake-authorize-checked", matches)) => {
             parse_stake_authorize(matches, default_signer, wallet_manager, CHECKED)
         }
-        ("stake-set-lockup", Some(matches)) => {
+        Some(("stake-set-lockup", matches)) => {
             parse_stake_set_lockup(matches, default_signer, wallet_manager, !CHECKED)
         }
-        ("stake-set-lockup-checked", Some(matches)) => {
+        Some(("stake-set-lockup-checked", matches)) => {
             parse_stake_set_lockup(matches, default_signer, wallet_manager, CHECKED)
         }
-        ("stake-account", Some(matches)) => parse_show_stake_account(matches, wallet_manager),
-        ("stake-history", Some(matches)) => parse_show_stake_history(matches),
-        ("stake-minimum-delegation", Some(matches)) => parse_stake_minimum_delegation(matches),
+        Some(("stake-account", matches)) => parse_show_stake_account(matches, wallet_manager),
+        Some(("stake-history", matches)) => parse_show_stake_history(matches),
+        Some(("stake-minimum-delegation", matches)) => parse_stake_minimum_delegation(matches),
         // Validator Info Commands
-        ("validator-info", Some(matches)) => match matches.subcommand() {
-            ("publish", Some(matches)) => {
+        Some(("validator-info", matches)) => match matches.subcommand() {
+            Some(("publish", matches)) => {
                 parse_validator_info_command(matches, default_signer, wallet_manager)
             }
-            ("get", Some(matches)) => parse_get_validator_info_command(matches),
+            Some(("get", matches)) => parse_get_validator_info_command(matches),
             _ => unreachable!(),
         },
         // Vote Commands
-        ("create-vote-account", Some(matches)) => {
+        Some(("create-vote-account", matches)) => {
             parse_create_vote_account(matches, default_signer, wallet_manager)
         }
-        ("vote-update-validator", Some(matches)) => {
+        Some(("vote-update-validator", matches)) => {
             parse_vote_update_validator(matches, default_signer, wallet_manager)
         }
-        ("vote-update-commission", Some(matches)) => {
+        Some(("vote-update-commission", matches)) => {
             parse_vote_update_commission(matches, default_signer, wallet_manager)
         }
-        ("vote-authorize-voter", Some(matches)) => parse_vote_authorize(
+        Some(("vote-authorize-voter", matches)) => parse_vote_authorize(
             matches,
             default_signer,
             wallet_manager,
             VoteAuthorize::Voter,
             !CHECKED,
         ),
-        ("vote-authorize-withdrawer", Some(matches)) => parse_vote_authorize(
+        Some(("vote-authorize-withdrawer", matches)) => parse_vote_authorize(
             matches,
             default_signer,
             wallet_manager,
             VoteAuthorize::Withdrawer,
             !CHECKED,
         ),
-        ("vote-authorize-voter-checked", Some(matches)) => parse_vote_authorize(
+        Some(("vote-authorize-voter-checked", matches)) => parse_vote_authorize(
             matches,
             default_signer,
             wallet_manager,
             VoteAuthorize::Voter,
             CHECKED,
         ),
-        ("vote-authorize-withdrawer-checked", Some(matches)) => parse_vote_authorize(
+        Some(("vote-authorize-withdrawer-checked", matches)) => parse_vote_authorize(
             matches,
             default_signer,
             wallet_manager,
             VoteAuthorize::Withdrawer,
             CHECKED,
         ),
-        ("vote-account", Some(matches)) => parse_vote_get_account_command(matches, wallet_manager),
-        ("withdraw-from-vote-account", Some(matches)) => {
+        Some(("vote-account", matches)) => parse_vote_get_account_command(matches, wallet_manager),
+        Some(("withdraw-from-vote-account", matches)) => {
             parse_withdraw_from_vote_account(matches, default_signer, wallet_manager)
         }
-        ("close-vote-account", Some(matches)) => {
+        Some(("close-vote-account", matches)) => {
             parse_close_vote_account(matches, default_signer, wallet_manager)
         }
         // Wallet Commands
-        ("account", Some(matches)) => parse_account(matches, wallet_manager),
-        ("address", Some(matches)) => Ok(CliCommandInfo {
+        Some(("account", matches)) => parse_account(matches, wallet_manager),
+        Some(("address", matches)) => Ok(CliCommandInfo {
             command: CliCommand::Address,
             signers: vec![default_signer.signer_from_path(matches, wallet_manager)?],
         }),
-        ("airdrop", Some(matches)) => parse_airdrop(matches, default_signer, wallet_manager),
-        ("balance", Some(matches)) => parse_balance(matches, default_signer, wallet_manager),
-        ("confirm", Some(matches)) => match matches.value_of("signature").unwrap().parse() {
+        Some(("airdrop", matches)) => parse_airdrop(matches, default_signer, wallet_manager),
+        Some(("balance", matches)) => parse_balance(matches, default_signer, wallet_manager),
+        Some(("confirm", matches)) => match matches.get_one::<String>("signature").unwrap().parse() {
             Ok(signature) => Ok(CliCommandInfo::without_signers(CliCommand::Confirm(
                 signature,
             ))),
             _ => Err(CliError::BadParameter("Invalid signature".to_string())),
         },
-        ("create-address-with-seed", Some(matches)) => {
+        Some(("create-address-with-seed", matches)) => {
             parse_create_address_with_seed(matches, default_signer, wallet_manager)
         }
-        ("find-program-derived-address", Some(matches)) => {
+        Some(("find-program-derived-address", matches)) => {
             parse_find_program_derived_address(matches)
         }
-        ("decode-transaction", Some(matches)) => parse_decode_transaction(matches),
-        ("resolve-signer", Some(matches)) => {
+        Some(("decode-transaction", matches)) => parse_decode_transaction(matches),
+        Some(("resolve-signer", matches)) => {
             let signer_path = resolve_signer(matches, "signer", wallet_manager)?;
             Ok(CliCommandInfo::without_signers(CliCommand::ResolveSigner(
                 signer_path,
             )))
         }
-        ("transfer", Some(matches)) => parse_transfer(matches, default_signer, wallet_manager),
-        ("sign-offchain-message", Some(matches)) => {
+        Some(("transfer", matches)) => parse_transfer(matches, default_signer, wallet_manager),
+        Some(("sign-offchain-message", matches)) => {
             parse_sign_offchain_message(matches, default_signer, wallet_manager)
         }
-        ("verify-offchain-signature", Some(matches)) => {
+        Some(("verify-offchain-signature", matches)) => {
             parse_verify_offchain_signature(matches, default_signer, wallet_manager)
         }
         //
-        ("", None) => {
-            eprintln!("{}", matches.usage());
+        Some(("", _)) => {
+            // Usage is printed automatically by clap v3 on error
             Err(CliError::CommandNotRecognized(
                 "no subcommand given".to_string(),
             ))

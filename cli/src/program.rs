@@ -18,11 +18,11 @@ use {
     solana_account::{state_traits::StateMut, Account},
     solana_account_decoder::{UiAccountEncoding, UiDataSliceConfig},
     solana_bpf_loader_program::syscalls::create_program_runtime_environment_v1,
-    solana_clap_utils::{
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{
         self,
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit},
+        compute_budget::compute_unit_price_arg,
         fee_payer::{fee_payer_arg, FEE_PAYER_ARG},
-        hidden_unless_forced,
         input_parsers::*,
         input_validators::*,
         keypair::*,
@@ -185,7 +185,7 @@ pub trait ProgramSubCommands {
     fn program_subcommands(self) -> Self;
 }
 
-impl ProgramSubCommands for App<'_, '_> {
+impl<'a> ProgramSubCommands for App<'a> {
     fn program_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("program")
@@ -214,7 +214,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("buffer")
                                 .value_name("BUFFER_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Intermediate buffer account to write data to, which can be \
                                      used to resume a failed deploy [default: random address]",
@@ -225,7 +225,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("upgrade-authority")
                                 .value_name("UPGRADE_AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Upgrade authority [default: the default configured keypair]",
                                 ),
@@ -326,7 +326,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("upgrade-authority")
                                 .value_name("UPGRADE_AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Upgrade authority [default: the default configured keypair]",
                                 ),
@@ -358,7 +358,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("buffer")
                                 .value_name("BUFFER_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Buffer account to write data into [default: random address]",
                                 ),
@@ -368,7 +368,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("buffer-authority")
                                 .value_name("BUFFER_AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help("Buffer authority [default: the default configured keypair]"),
                         )
                         .arg(
@@ -431,7 +431,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("buffer-authority")
                                 .value_name("BUFFER_AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help("Buffer authority [default: the default configured keypair]"),
                         )
                         .arg(pubkey!(
@@ -458,7 +458,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("upgrade-authority")
                                 .value_name("UPGRADE_AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Upgrade authority [default: the default configured keypair]",
                                 ),
@@ -588,7 +588,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .alias("buffer-authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Upgrade or buffer authority [default: the default configured \
                                      keypair]",
@@ -625,7 +625,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .value_name("PROGRAM_ID")
                                 .takes_value(true)
                                 .required(true)
-                                .validator(is_valid_pubkey)
+                                .validator(crate::clap_app::validate_pubkey)
                                 .help("Address of the program to extend"),
                         )
                         .arg(
@@ -652,7 +652,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .value_name("PROGRAM_ID")
                                 .takes_value(true)
                                 .required(true)
-                                .validator(is_valid_pubkey)
+                                .validator(crate::clap_app::validate_pubkey)
                                 .help("Address of the program to extend"),
                         )
                         .arg(
@@ -660,7 +660,7 @@ impl ProgramSubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Upgrade authority [default: the default configured \
                                      keypair]",
@@ -681,19 +681,20 @@ impl ProgramSubCommands for App<'_, '_> {
 }
 
 pub fn parse_program_subcommand(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
-    let (subcommand, sub_matches) = matches.subcommand();
+    let Some((subcommand, sub_matches)) = matches.subcommand() else {
+        return Err(CliError::CommandNotRecognized("No subcommand provided".to_string()));
+    };
     let matches_skip_fee_check = matches.is_present("skip_fee_check");
-    let sub_matches_skip_fee_check = sub_matches
-        .map(|m| m.is_present("skip_fee_check"))
-        .unwrap_or(false);
+    let sub_matches_skip_fee_check = sub_matches.is_present("skip_fee_check");
     let skip_fee_check = matches_skip_fee_check || sub_matches_skip_fee_check;
 
-    let response = match (subcommand, sub_matches) {
-        ("deploy", Some(matches)) => {
+    let response = match subcommand {
+        "deploy" => {
+            let matches = sub_matches;
             let (fee_payer, fee_payer_pubkey) =
                 signer_of(matches, FEE_PAYER_ARG.name, wallet_manager)?;
 
@@ -763,7 +764,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("upgrade", Some(matches)) => {
+        "upgrade" => {
+            let matches = sub_matches;
             let sign_only = matches.is_present(SIGN_ONLY_ARG.name);
             let dump_transaction_message = matches.is_present(DUMP_TRANSACTION_MESSAGE.name);
             let blockhash_query = BlockhashQuery::new_from_matches(matches);
@@ -806,7 +808,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("write-buffer", Some(matches)) => {
+        "write-buffer" => {
+            let matches = sub_matches;
             let (fee_payer, fee_payer_pubkey) =
                 signer_of(matches, FEE_PAYER_ARG.name, wallet_manager)?;
 
@@ -856,7 +859,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("set-buffer-authority", Some(matches)) => {
+        "set-buffer-authority" => {
+            let matches = sub_matches;
             let buffer_pubkey = pubkey_of(matches, "buffer").unwrap();
 
             let (buffer_authority_signer, buffer_authority_pubkey) =
@@ -882,7 +886,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("set-upgrade-authority", Some(matches)) => {
+        "set-upgrade-authority" => {
+            let matches = sub_matches;
             let sign_only = matches.is_present(SIGN_ONLY_ARG.name);
             let dump_transaction_message = matches.is_present(DUMP_TRANSACTION_MESSAGE.name);
             let blockhash_query = BlockhashQuery::new_from_matches(matches);
@@ -940,7 +945,8 @@ pub fn parse_program_subcommand(
                 }
             }
         }
-        ("show", Some(matches)) => {
+        "show" => {
+            let matches = sub_matches;
             let authority_pubkey = if let Some(authority_pubkey) =
                 pubkey_of_signer(matches, "buffer_authority", wallet_manager)?
             {
@@ -960,13 +966,15 @@ pub fn parse_program_subcommand(
                 use_lamports_unit: matches.is_present("lamports"),
             }))
         }
-        ("dump", Some(matches)) => {
+        "dump" => {
+            let matches = sub_matches;
             CliCommandInfo::without_signers(CliCommand::Program(ProgramCliCommand::Dump {
                 account_pubkey: pubkey_of(matches, "account"),
                 output_location: matches.value_of("output_location").unwrap().to_string(),
             }))
         }
-        ("close", Some(matches)) => {
+        "close" => {
+            let matches = sub_matches;
             let account_pubkey = if matches.is_present("buffers") {
                 None
             } else {
@@ -1006,7 +1014,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("extend", Some(matches)) => {
+        "extend" => {
+            let matches = sub_matches;
             let program_pubkey = pubkey_of(matches, "program_id").unwrap();
             let additional_bytes = value_of(matches, "additional_bytes").unwrap();
 
@@ -1031,7 +1040,8 @@ pub fn parse_program_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("migrate", Some(matches)) => {
+        "migrate" => {
+            let matches = sub_matches;
             let program_pubkey = pubkey_of(matches, "program_id").unwrap();
 
             let (authority_signer, authority_pubkey) =

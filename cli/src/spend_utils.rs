@@ -6,8 +6,9 @@ use {
         stake,
     },
     clap::ArgMatches,
-    solana_clap_utils::{
-        compute_budget::ComputeUnitLimit, input_parsers::lamports_of_sol, offline::SIGN_ONLY_ARG,
+    solana_clap_utils::compute_budget::ComputeUnitLimit,
+    solana_clap_v3_utils::{
+        input_parsers::lamports_of_sol, offline::SIGN_ONLY_ARG,
     },
     solana_commitment_config::CommitmentConfig,
     solana_hash::Hash,
@@ -41,7 +42,7 @@ impl SpendAmount {
         }
     }
 
-    pub fn new_from_matches(matches: &ArgMatches<'_>, name: &str) -> Self {
+    pub fn new_from_matches(matches: &ArgMatches, name: &str) -> Self {
         let sign_only = matches.is_present(SIGN_ONLY_ARG.name);
         let amount = lamports_of_sol(matches, name);
         if amount.is_some() {

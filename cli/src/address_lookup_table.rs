@@ -10,7 +10,7 @@ use {
         },
         state::AddressLookupTable,
     },
-    solana_clap_utils::{self, input_parsers::*, input_validators::*, keypair::*},
+    solana_clap_v3_utils::{self, input_parsers::*, input_validators::*, keypair::*},
     solana_cli_output::{CliAddressLookupTable, CliAddressLookupTableCreated, CliSignature},
     solana_clock::Clock,
     solana_commitment_config::CommitmentConfig,
@@ -61,7 +61,7 @@ pub trait AddressLookupTableSubCommands {
     fn address_lookup_table_subcommands(self) -> Self;
 }
 
-impl AddressLookupTableSubCommands for App<'_, '_> {
+impl<'a> AddressLookupTableSubCommands for App<'a> {
     fn address_lookup_table_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("address-lookup-table")
@@ -76,7 +76,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .alias("authority-signer")
                                 .value_name("AUTHORITY_PUBKEY")
                                 .takes_value(true)
-                                .validator(is_pubkey_or_keypair)
+                                .validator(crate::clap_app::validate_pubkey_or_keypair)
                                 .help(
                                     "Lookup table authority address \
                                     [default: the default configured keypair].",
@@ -87,7 +87,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("payer")
                                 .value_name("PAYER_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Account that will pay rent fees for the created lookup table \
                                      [default: the default configured keypair]",
@@ -111,7 +111,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Lookup table authority \
                                     [default: the default configured keypair]",
@@ -141,7 +141,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Lookup table authority \
                                     [default: the default configured keypair]",
@@ -152,7 +152,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("payer")
                                 .value_name("PAYER_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Account that will pay rent fees for the extended lookup \
                                      table [default: the default configured keypair]",
@@ -185,7 +185,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Lookup table authority \
                                     [default: the default configured keypair]",
@@ -225,7 +225,7 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Lookup table authority \
                                     [default: the default configured keypair]",
@@ -249,14 +249,17 @@ impl AddressLookupTableSubCommands for App<'_, '_> {
 }
 
 pub fn parse_address_lookup_table_subcommand(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
-    let (subcommand, sub_matches) = matches.subcommand();
+    let (subcommand, sub_matches) = match matches.subcommand() {
+        Some((subcommand, sub_matches)) => (subcommand, sub_matches),
+        None => return Err(CliError::CommandNotRecognized("No subcommand specified".to_string())),
+    };
 
     let response = match (subcommand, sub_matches) {
-        ("create", Some(matches)) => {
+        ("create", matches) => {
             let mut bulk_signers = vec![Some(
                 default_signer.signer_from_path(matches, wallet_manager)?,
             )];
@@ -295,7 +298,7 @@ pub fn parse_address_lookup_table_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("freeze", Some(matches)) => {
+        ("freeze", matches) => {
             let lookup_table_pubkey = pubkey_of(matches, "lookup_table_address").unwrap();
 
             let mut bulk_signers = vec![Some(
@@ -329,7 +332,7 @@ pub fn parse_address_lookup_table_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("extend", Some(matches)) => {
+        ("extend", matches) => {
             let lookup_table_pubkey = pubkey_of(matches, "lookup_table_address").unwrap();
 
             let mut bulk_signers = vec![Some(
@@ -379,7 +382,7 @@ pub fn parse_address_lookup_table_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("deactivate", Some(matches)) => {
+        ("deactivate", matches) => {
             let lookup_table_pubkey = pubkey_of(matches, "lookup_table_address").unwrap();
 
             let mut bulk_signers = vec![Some(
@@ -413,7 +416,7 @@ pub fn parse_address_lookup_table_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("close", Some(matches)) => {
+        ("close", matches) => {
             let lookup_table_pubkey = pubkey_of(matches, "lookup_table_address").unwrap();
 
             let mut bulk_signers = vec![Some(
@@ -455,7 +458,7 @@ pub fn parse_address_lookup_table_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("get", Some(matches)) => {
+        ("get", matches) => {
             let lookup_table_pubkey = pubkey_of(matches, "lookup_table_address").unwrap();
 
             CliCommandInfo::without_signers(CliCommand::AddressLookupTable(

@@ -12,8 +12,9 @@ use {
     crossbeam_channel::unbounded,
     serde::{Deserialize, Serialize},
     solana_account::{from_account, state_traits::StateMut},
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
+    solana_clap_utils::compute_budget::ComputeUnitLimit,
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         input_parsers::*,
         input_validators::*,
         keypair::DefaultSigner,
@@ -82,7 +83,7 @@ pub trait ClusterQuerySubCommands {
     fn cluster_query_subcommands(self) -> Self;
 }
 
-impl ClusterQuerySubCommands for App<'_, '_> {
+impl<'a> ClusterQuerySubCommands for App<'a> {
     fn cluster_query_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("block")
@@ -90,7 +91,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 .arg(
                     Arg::with_name("slot")
                         .long("slot")
-                        .validator(is_slot)
+                        .validator(crate::clap_app::validate_slot)
                         .value_name("SLOT")
                         .takes_value(true)
                         .index(1),
@@ -133,7 +134,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("OUR_URL")
                         .takes_value(true)
-                        .validator(is_url)
+                        .validator(crate::clap_app::validate_url)
                         .help(
                             "JSON RPC URL for validator, which is useful for validators with a \
                              private RPC service",
@@ -151,7 +152,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                         .takes_value(false)
                         .value_name("PORT")
                         .default_value(DEFAULT_RPC_PORT_STR)
-                        .validator(is_port)
+                        .validator(crate::clap_app::validate_port)
                         .help(
                             "Guess Identity pubkey and validator rpc node assuming local \
                              (possibly private) validator",
@@ -193,7 +194,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                         .long("epoch")
                         .takes_value(true)
                         .value_name("EPOCH")
-                        .validator(is_epoch)
+                        .validator(crate::clap_app::validate_epoch)
                         .help("Epoch to show leader schedule for [default: current]"),
                 ),
         )
@@ -256,7 +257,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 .about("Submit transactions sequentially")
                 .arg(
                     Arg::with_name("interval")
-                        .short("i")
+                        .short('i')
                         .long("interval")
                         .value_name("SECONDS")
                         .takes_value(true)
@@ -265,7 +266,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 )
                 .arg(
                     Arg::with_name("count")
-                        .short("c")
+                        .short('c')
                         .long("count")
                         .value_name("NUMBER")
                         .takes_value(true)
@@ -273,7 +274,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 )
                 .arg(
                     Arg::with_name("print_timestamp")
-                        .short("D")
+                        .short('D')
                         .long("print-timestamp")
                         .takes_value(false)
                         .help(
@@ -283,7 +284,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 )
                 .arg(
                     Arg::with_name("timeout")
-                        .short("t")
+                        .short('t')
                         .long("timeout")
                         .value_name("SECONDS")
                         .takes_value(true)
@@ -375,14 +376,14 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                 .arg(
                     Arg::with_name("number")
                         .long("number")
-                        .short("n")
+                        .short('n')
                         .takes_value(false)
                         .help("Number the validators"),
                 )
                 .arg(
                     Arg::with_name("reverse")
                         .long("reverse")
-                        .short("r")
+                        .short('r')
                         .takes_value(false)
                         .help("Reverse order while sorting"),
                 )
@@ -416,7 +417,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                         .long("delinquent-slot-distance")
                         .takes_value(true)
                         .value_name("SLOT_DISTANCE")
-                        .validator(is_slot)
+                        .validator(crate::clap_app::validate_slot)
                         .help(concatcp!(
                             "Minimum slot distance from the tip to consider a validator \
                              delinquent [default: ",
@@ -443,7 +444,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
                         .long("limit")
                         .takes_value(true)
                         .value_name("LIMIT")
-                        .validator(is_slot)
+                        .validator(crate::clap_app::validate_slot)
                         .default_value("1000")
                         .help("Maximum number of transaction signatures to return"),
                 )
@@ -512,7 +513,7 @@ impl ClusterQuerySubCommands for App<'_, '_> {
 }
 
 pub fn parse_catchup(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let node_pubkey = pubkey_of_signer(matches, "node_pubkey", wallet_manager)?;
@@ -543,7 +544,7 @@ pub fn parse_catchup(
 }
 
 pub fn parse_cluster_ping(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -570,7 +571,7 @@ pub fn parse_cluster_ping(
     })
 }
 
-pub fn parse_get_block(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_block(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let slot = value_of(matches, "slot");
     Ok(CliCommandInfo::without_signers(CliCommand::GetBlock {
         slot,
@@ -578,7 +579,7 @@ pub fn parse_get_block(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliEr
 }
 
 pub fn parse_get_recent_prioritization_fees(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<CliCommandInfo, CliError> {
     let accounts = values_of(matches, "accounts").unwrap_or(vec![]);
     let limit_num_slots = value_of(matches, "limit_num_slots");
@@ -590,30 +591,30 @@ pub fn parse_get_recent_prioritization_fees(
     ))
 }
 
-pub fn parse_get_block_time(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_block_time(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let slot = value_of(matches, "slot");
     Ok(CliCommandInfo::without_signers(CliCommand::GetBlockTime {
         slot,
     }))
 }
 
-pub fn parse_get_epoch(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_epoch(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(CliCommand::GetEpoch))
 }
 
-pub fn parse_get_epoch_info(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_epoch_info(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(CliCommand::GetEpochInfo))
 }
 
-pub fn parse_get_slot(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_slot(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(CliCommand::GetSlot))
 }
 
-pub fn parse_get_block_height(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_block_height(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(CliCommand::GetBlockHeight))
 }
 
-pub fn parse_largest_accounts(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_largest_accounts(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let filter = if matches.is_present("circulating") {
         Some(RpcLargestAccountsFilter::Circulating)
     } else if matches.is_present("non_circulating") {
@@ -626,25 +627,25 @@ pub fn parse_largest_accounts(matches: &ArgMatches<'_>) -> Result<CliCommandInfo
     ))
 }
 
-pub fn parse_supply(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_supply(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let print_accounts = matches.is_present("print_accounts");
     Ok(CliCommandInfo::without_signers(CliCommand::Supply {
         print_accounts,
     }))
 }
 
-pub fn parse_total_supply(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_total_supply(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(CliCommand::TotalSupply))
 }
 
-pub fn parse_get_transaction_count(_matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_get_transaction_count(_matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     Ok(CliCommandInfo::without_signers(
         CliCommand::GetTransactionCount,
     ))
 }
 
 pub fn parse_show_stakes(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let use_lamports_unit = matches.is_present("lamports");
@@ -658,7 +659,7 @@ pub fn parse_show_stakes(
     }))
 }
 
-pub fn parse_show_validators(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_show_validators(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let use_lamports_unit = matches.is_present("lamports");
     let number_validators = matches.is_present("number");
     let reverse_sort = matches.is_present("reverse");
@@ -692,7 +693,7 @@ pub fn parse_show_validators(matches: &ArgMatches<'_>) -> Result<CliCommandInfo,
 }
 
 pub fn parse_transaction_history(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let address = pubkey_of_signer(matches, "address", wallet_manager)?.unwrap();
@@ -972,7 +973,7 @@ pub fn process_first_available_block(rpc_client: &RpcClient) -> ProcessResult {
     Ok(format!("{first_available_block}"))
 }
 
-pub fn parse_leader_schedule(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_leader_schedule(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let epoch = value_of(matches, "epoch");
     Ok(CliCommandInfo::without_signers(
         CliCommand::LeaderSchedule { epoch },
@@ -1195,7 +1196,7 @@ pub fn process_get_block_height(rpc_client: &RpcClient, _config: &CliConfig) -> 
     Ok(block_height.to_string())
 }
 
-pub fn parse_show_block_production(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_show_block_production(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let epoch = value_t!(matches, "epoch", Epoch).ok();
     let slot_limit = value_t!(matches, "slot_limit", u64).ok();
 
@@ -1644,7 +1645,7 @@ pub fn process_ping(
 }
 
 pub fn parse_logs(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let address = pubkey_of_signer(matches, "address", wallet_manager)?;

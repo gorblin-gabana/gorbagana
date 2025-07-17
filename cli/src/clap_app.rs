@@ -5,11 +5,73 @@ use {
         validator_info::*, vote::*, wallet::*,
     },
     clap::{App, AppSettings, Arg, ArgGroup, SubCommand},
-    solana_clap_utils::{self, hidden_unless_forced, input_validators::*, keypair::*},
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{self, keypair::*},
     solana_cli_config::CONFIG_FILE,
 };
 
-pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, 'v> {
+// Wrapper functions to fix lifetime issues with clap v3
+pub fn validate_pubkey(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_valid_pubkey(s)
+}
+
+pub fn validate_signer(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_valid_signer(s)
+}
+
+pub fn validate_amount(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_amount(s)
+}
+
+pub fn validate_amount_or_all(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_amount_or_all(s)
+}
+
+pub fn validate_percentage(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_valid_percentage(s)
+}
+
+pub fn validate_slot(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_slot(s)
+}
+
+pub fn validate_url(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_url(s)
+}
+
+pub fn validate_port(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_port(s)
+}
+
+pub fn validate_epoch(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_epoch(s)
+}
+
+pub fn validate_pubkey_or_keypair(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_pubkey_or_keypair(s)
+}
+
+pub fn validate_derived_address_seed(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_derived_address_seed(s)
+}
+
+pub fn validate_structured_seed(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_structured_seed(s)
+}
+
+pub fn validate_url_or_moniker(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_url_or_moniker(s)
+}
+
+pub fn validate_amount_or_all_or_available(s: &str) -> Result<(), String> {
+    solana_clap_utils::input_validators::is_amount_or_all_or_available(s)
+}
+
+pub fn validate_rfc3339_datetime(s: &str) -> Result<(), String> {
+    solana_clap_v3_utils::input_validators::is_rfc3339_datetime(s)
+}
+
+pub fn get_clap_app<'a>(name: &'a str, about: &'a str, version: &'a str) -> App<'a> {
     App::new(name)
         .about(about)
         .version(version)
@@ -23,7 +85,7 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
         )
         .arg({
             let arg = Arg::with_name("config_file")
-                .short("C")
+                .short('C')
                 .long("config")
                 .value_name("FILEPATH")
                 .takes_value(true)
@@ -37,12 +99,12 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
         })
         .arg(
             Arg::with_name("json_rpc_url")
-                .short("u")
+                .short('u')
                 .long("url")
                 .value_name("URL_OR_MONIKER")
                 .takes_value(true)
                 .global(true)
-                .validator(is_url_or_moniker)
+                .validator(validate_url_or_moniker)
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
                     [mainnet-beta, testnet, devnet, localhost]",
@@ -54,12 +116,12 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
                 .value_name("URL")
                 .takes_value(true)
                 .global(true)
-                .validator(is_url)
+                .validator(crate::clap_app::validate_url)
                 .help("WebSocket URL for the solana cluster"),
         )
         .arg(
             Arg::with_name("keypair")
-                .short("k")
+                .short('k')
                 .long("keypair")
                 .value_name("KEYPAIR")
                 .global(true)
@@ -91,7 +153,7 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
         .arg(
             Arg::with_name("verbose")
                 .long("verbose")
-                .short("v")
+                .short('v')
                 .global(true)
                 .help("Show additional information"),
         )
@@ -227,7 +289,7 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
                 .arg(
                     Arg::with_name("shell")
                         .long("shell")
-                        .short("s")
+                        .short('s')
                         .takes_value(true)
                         .possible_values(&["bash", "fish", "zsh", "powershell", "elvish"])
                         .default_value("bash"),

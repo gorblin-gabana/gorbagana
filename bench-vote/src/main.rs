@@ -78,11 +78,11 @@ fn main() -> Result<()> {
         .version(solana_version::version!())
         .arg(
             Arg::with_name("identity")
-                .short("i")
+                .short('i')
                 .long("identity")
                 .value_name("KEYPAIR")
                 .takes_value(true)
-                .validator(is_keypair_or_ask_keyword)
+                .validator(|arg| is_keypair_or_ask_keyword(arg))
                 .help("Identity keypair for the QUIC endpoint. If it is not specified a random key is created."),
         )
         .arg(
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("server-address")
-                .short("n")
+                .short('n')
                 .long("server-address")
                 .value_name("HOST:PORT")
                 .takes_value(true)

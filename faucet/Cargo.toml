@@ -22,7 +22,7 @@ path = "src/bin/faucet.rs"
 
 [dependencies]
 bincode = { workspace = true }
-clap = { workspace = true }
+clap = { version = "3.1.5", features = ["cargo"] }
 crossbeam-channel = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }

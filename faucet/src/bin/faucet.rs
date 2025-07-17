@@ -18,7 +18,6 @@ use {
 #[tokio::main]
 async fn main() {
     let default_keypair = solana_cli_config::Config::default().keypair_path;
-
     solana_logger::setup_with_default_filter();
     solana_metrics::set_panic_hook("faucet", /*version:*/ None);
     let matches = App::new(crate_name!())
@@ -26,7 +25,7 @@ async fn main() {
         .version(solana_version::version!())
         .arg(
             Arg::with_name("keypair")
-                .short("k")
+                .short('k')
                 .long("keypair")
                 .value_name("PATH")
                 .takes_value(true)
@@ -64,7 +63,7 @@ async fn main() {
                 .multiple(true)
                 .help(
                     "Allow requests from a particular IP address without request limit; \
-                    recipient address will be used to check request limits instead",
+                     recipient address will be used to check request limits instead",
                 ),
         )
         .get_matches();

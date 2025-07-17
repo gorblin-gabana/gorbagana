@@ -14,7 +14,7 @@ dev-context-only-utils = []
 
 [dependencies]
 ahash = { workspace = true }
-clap = { workspace = true }
+clap = "3.2.25"
 rayon = { workspace = true }
 solana-account = { workspace = true }
 solana-accounts-db = { workspace = true, features = ["dev-context-only-utils"] }

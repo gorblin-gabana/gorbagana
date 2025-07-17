@@ -15,10 +15,10 @@ use {
     },
     clap::{value_t, App, AppSettings, Arg, ArgGroup, ArgMatches, SubCommand},
     solana_account::{from_account, state_traits::StateMut, Account},
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         fee_payer::{fee_payer_arg, FEE_PAYER_ARG},
-        hidden_unless_forced,
         input_parsers::*,
         input_validators::*,
         keypair::{DefaultSigner, SignerIndex},
@@ -81,30 +81,30 @@ pub const CUSTODIAN_ARG: ArgConstant<'static> = ArgConstant {
     help: "Authority to override account lockup",
 };
 
-fn stake_authority_arg<'a, 'b>() -> Arg<'a, 'b> {
+fn stake_authority_arg<'a>() -> Arg<'a> {
     Arg::with_name(STAKE_AUTHORITY_ARG.name)
         .long(STAKE_AUTHORITY_ARG.long)
         .takes_value(true)
         .value_name("KEYPAIR")
-        .validator(is_valid_signer)
+        .validator(|arg| is_valid_signer(arg))
         .help(STAKE_AUTHORITY_ARG.help)
 }
 
-fn withdraw_authority_arg<'a, 'b>() -> Arg<'a, 'b> {
+fn withdraw_authority_arg<'a>() -> Arg<'a> {
     Arg::with_name(WITHDRAW_AUTHORITY_ARG.name)
         .long(WITHDRAW_AUTHORITY_ARG.long)
         .takes_value(true)
         .value_name("KEYPAIR")
-        .validator(is_valid_signer)
+        .validator(|arg| is_valid_signer(arg))
         .help(WITHDRAW_AUTHORITY_ARG.help)
 }
 
-fn custodian_arg<'a, 'b>() -> Arg<'a, 'b> {
+fn custodian_arg<'a>() -> Arg<'a> {
     Arg::with_name(CUSTODIAN_ARG.name)
         .long(CUSTODIAN_ARG.long)
         .takes_value(true)
         .value_name("KEYPAIR")
-        .validator(is_valid_signer)
+        .validator(|arg| is_valid_signer(arg))
         .help(CUSTODIAN_ARG.help)
 }
 
@@ -124,7 +124,7 @@ pub struct StakeAuthorizationIndexed {
 
 struct SignOnlySplitNeedsRent {}
 impl ArgsConfig for SignOnlySplitNeedsRent {
-    fn sign_only_arg<'a, 'b>(&self, arg: Arg<'a, 'b>) -> Arg<'a, 'b> {
+    fn sign_only_arg<'a>(&self, arg: Arg<'a>) -> Arg<'a> {
         arg.requires("rent_exempt_reserve_sol")
     }
 }
@@ -133,7 +133,7 @@ pub trait StakeSubCommands {
     fn stake_subcommands(self) -> Self;
 }
 
-impl StakeSubCommands for App<'_, '_> {
+impl<'a> StakeSubCommands for App<'a> {
     fn stake_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("create-stake-account")
@@ -144,7 +144,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .value_name("STAKE_ACCOUNT_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help(
                             "Stake account to create (or base of derived address if --seed is \
                              used)",
@@ -155,7 +155,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount_or_all)
+                        .validator(crate::clap_app::validate_amount_or_all)
                         .required(true)
                         .help(
                             "The amount to send to the stake account, in SOL; accepts keyword ALL",
@@ -191,7 +191,7 @@ impl StakeSubCommands for App<'_, '_> {
                     Arg::with_name("lockup_date")
                         .long("lockup-date")
                         .value_name("RFC3339 DATETIME")
-                        .validator(is_rfc3339_datetime)
+                        .validator(crate::clap_app::validate_rfc3339_datetime)
                         .takes_value(true)
                         .help(
                             "The date and time at which this account will be available for \
@@ -203,7 +203,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long(STAKE_AUTHORITY_ARG.long)
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .validator(is_valid_pubkey)
+                        .validator(crate::clap_app::validate_pubkey)
                         .help(STAKE_AUTHORITY_ARG.help),
                 )
                 .arg(
@@ -211,7 +211,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long(WITHDRAW_AUTHORITY_ARG.long)
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .validator(is_valid_pubkey)
+                        .validator(crate::clap_app::validate_pubkey)
                         .help(WITHDRAW_AUTHORITY_ARG.help),
                 )
                 .arg(
@@ -219,7 +219,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("from")
                         .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Source account of funds [default: cli config keypair]"),
                 )
                 .offline_args()
@@ -237,7 +237,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .value_name("STAKE_ACCOUNT_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help(
                             "Stake account to create (or base of derived address if --seed is \
                              used)",
@@ -248,7 +248,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount_or_all)
+                        .validator(crate::clap_app::validate_amount_or_all)
                         .required(true)
                         .help(
                             "The amount to send to the stake account, in SOL; accepts keyword ALL",
@@ -269,7 +269,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long(STAKE_AUTHORITY_ARG.long)
                         .value_name("PUBKEY")
                         .takes_value(true)
-                        .validator(is_valid_pubkey)
+                        .validator(crate::clap_app::validate_pubkey)
                         .help(STAKE_AUTHORITY_ARG.help),
                 )
                 .arg(
@@ -277,7 +277,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long(WITHDRAW_AUTHORITY_ARG.long)
                         .value_name("KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help(WITHDRAW_AUTHORITY_ARG.help),
                 )
                 .arg(
@@ -285,7 +285,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("from")
                         .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Source account of funds [default: cli config keypair]"),
                 )
                 .offline_args()
@@ -395,7 +395,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("new-stake-authority")
                         .value_name("KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .required_unless("new_withdraw_authority")
                         .help("New authorized staker"),
                 )
@@ -404,7 +404,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("new-withdraw-authority")
                         .value_name("KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .required_unless("new_stake_authority")
                         .help("New authorized withdrawer"),
                 )
@@ -480,7 +480,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .value_name("SPLIT_STAKE_ACCOUNT")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of the new stake account"),
                 )
                 .arg(
@@ -488,7 +488,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .index(3)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount)
+                        .validator(crate::clap_app::validate_amount)
                         .required(true)
                         .help("The amount to move into the new stake account, in SOL"),
                 )
@@ -513,7 +513,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("rent-exempt-reserve-sol")
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount)
+                        .validator(crate::clap_app::validate_amount)
                         .help(
                             "The rent-exempt amount to move into the new \
                              stake account, in SOL. Required for offline signing.",
@@ -568,7 +568,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .index(3)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount_or_all_or_available)
+                        .validator(crate::clap_app::validate_amount_or_all_or_available)
                         .required(true)
                         .help(
                             "The amount to withdraw from the stake account, in SOL; accepts \
@@ -617,7 +617,7 @@ impl StakeSubCommands for App<'_, '_> {
                     Arg::with_name("lockup_date")
                         .long("lockup-date")
                         .value_name("RFC3339 DATETIME")
-                        .validator(is_rfc3339_datetime)
+                        .validator(crate::clap_app::validate_rfc3339_datetime)
                         .takes_value(true)
                         .help(
                             "The date and time at which this account will be available for \
@@ -641,7 +641,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("custodian")
                         .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of the existing custodian [default: cli config pubkey]"),
                 )
                 .offline_args()
@@ -674,7 +674,7 @@ impl StakeSubCommands for App<'_, '_> {
                     Arg::with_name("lockup_date")
                         .long("lockup-date")
                         .value_name("RFC3339 DATETIME")
-                        .validator(is_rfc3339_datetime)
+                        .validator(crate::clap_app::validate_rfc3339_datetime)
                         .takes_value(true)
                         .help(
                             "The date and time at which this account will be available for \
@@ -686,7 +686,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("new-custodian")
                         .value_name("KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of a new lockup custodian"),
                 )
                 .group(
@@ -700,7 +700,7 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("custodian")
                         .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of the existing custodian [default: cli config pubkey]"),
                 )
                 .offline_args()
@@ -751,8 +751,8 @@ impl StakeSubCommands for App<'_, '_> {
                         .long("num-rewards-epochs")
                         .takes_value(true)
                         .value_name("NUM")
-                        .validator(|s| is_within_range(s, 1..=50))
-                        .default_value_if("with_rewards", None, "1")
+                        .validator(|s| is_within_range(s.to_string(), 1..=50))
+                        .default_value_if("with_rewards", None, Some("1"))
                         .requires("with_rewards")
                         .help(
                             "Display rewards for NUM recent epochs, max 10 \
@@ -797,7 +797,7 @@ impl StakeSubCommands for App<'_, '_> {
 }
 
 pub fn parse_create_stake_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     checked: bool,
@@ -873,7 +873,7 @@ pub fn parse_create_stake_account(
 }
 
 pub fn parse_stake_delegate_stake(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -921,7 +921,7 @@ pub fn parse_stake_delegate_stake(
 }
 
 pub fn parse_stake_authorize(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     checked: bool,
@@ -1050,7 +1050,7 @@ pub fn parse_stake_authorize(
 }
 
 pub fn parse_split_stake(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -1103,7 +1103,7 @@ pub fn parse_split_stake(
 }
 
 pub fn parse_merge_stake(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -1150,7 +1150,7 @@ pub fn parse_merge_stake(
 }
 
 pub fn parse_stake_deactivate_stake(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -1198,7 +1198,7 @@ pub fn parse_stake_deactivate_stake(
 }
 
 pub fn parse_stake_withdraw_stake(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -1253,7 +1253,7 @@ pub fn parse_stake_withdraw_stake(
 }
 
 pub fn parse_stake_set_lockup(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     checked: bool,
@@ -1322,7 +1322,7 @@ pub fn parse_stake_set_lockup(
 }
 
 pub fn parse_show_stake_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let stake_account_pubkey =
@@ -1346,7 +1346,7 @@ pub fn parse_show_stake_account(
     ))
 }
 
-pub fn parse_show_stake_history(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_show_stake_history(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let use_lamports_unit = matches.is_present("lamports");
     let limit_results = value_of(matches, "limit").unwrap();
     Ok(CliCommandInfo::without_signers(
@@ -1358,7 +1358,7 @@ pub fn parse_show_stake_history(matches: &ArgMatches<'_>) -> Result<CliCommandIn
 }
 
 pub fn parse_stake_minimum_delegation(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<CliCommandInfo, CliError> {
     let use_lamports_unit = matches.is_present("lamports");
     Ok(CliCommandInfo::without_signers(

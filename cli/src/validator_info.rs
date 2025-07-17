@@ -12,9 +12,9 @@ use {
     solana_account_decoder::validator_info::{
         self, ValidatorInfo, MAX_LONG_FIELD_LENGTH, MAX_SHORT_FIELD_LENGTH, MAX_VALIDATOR_INFO,
     },
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
-        hidden_unless_forced,
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         input_parsers::{pubkey_of, value_of},
         input_validators::{is_pubkey, is_url},
         keypair::DefaultSigner,
@@ -101,7 +101,7 @@ fn verify_keybase(
     }
 }
 
-fn parse_args(matches: &ArgMatches<'_>) -> Value {
+fn parse_args(matches: &ArgMatches) -> Value {
     let mut map = Map::new();
     map.insert(
         "name".to_string(),
@@ -148,7 +148,7 @@ pub trait ValidatorInfoSubCommands {
     fn validator_info_subcommands(self) -> Self;
 }
 
-impl ValidatorInfoSubCommands for App<'_, '_> {
+impl<'a> ValidatorInfoSubCommands for App<'a> {
     fn validator_info_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("validator-info")
@@ -159,7 +159,7 @@ impl ValidatorInfoSubCommands for App<'_, '_> {
                         .about("Publish Validator info on Solana")
                         .arg(
                             Arg::with_name("info_pubkey")
-                                .short("p")
+                                .short('p')
                                 .long("info-pubkey")
                                 .value_name("PUBKEY")
                                 .takes_value(true)
@@ -172,44 +172,44 @@ impl ValidatorInfoSubCommands for App<'_, '_> {
                                 .value_name("NAME")
                                 .takes_value(true)
                                 .required(true)
-                                .validator(is_short_field)
+                                .validator(|arg| is_short_field(arg.to_string()))
                                 .help("Validator name"),
                         )
                         .arg(
                             Arg::with_name("website")
-                                .short("w")
+                                .short('w')
                                 .long("website")
                                 .value_name("URL")
                                 .takes_value(true)
-                                .validator(check_url)
+                                .validator(|arg| check_url(arg.to_string()))
                                 .help("Validator website url"),
                         )
                         .arg(
                             Arg::with_name("icon_url")
-                                .short("i")
+                                .short('i')
                                 .long("icon-url")
                                 .value_name("URL")
                                 .takes_value(true)
-                                .validator(check_url)
+                                .validator(|arg| check_url(arg.to_string()))
                                 .help("Validator icon URL"),
                         )
                         .arg(
                             Arg::with_name("keybase_username")
-                                .short("n")
+                                .short('n')
                                 .long("keybase")
                                 .value_name("USERNAME")
                                 .takes_value(true)
-                                .validator(is_short_field)
+                                .validator(|arg| is_short_field(arg.to_string()))
                                 .hidden(hidden_unless_forced()) // Being phased out
                                 .help("Validator Keybase username"),
                         )
                         .arg(
                             Arg::with_name("details")
-                                .short("d")
+                                .short('d')
                                 .long("details")
                                 .value_name("DETAILS")
                                 .takes_value(true)
-                                .validator(check_details_length)
+                                .validator(|arg| check_details_length(arg.to_string()))
                                 .help("Validator description"),
                         )
                         .arg(
@@ -241,7 +241,7 @@ impl ValidatorInfoSubCommands for App<'_, '_> {
 }
 
 pub fn parse_validator_info_command(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -261,7 +261,7 @@ pub fn parse_validator_info_command(
 }
 
 pub fn parse_get_validator_info_command(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<CliCommandInfo, CliError> {
     let info_pubkey = pubkey_of(matches, "info_pubkey");
     Ok(CliCommandInfo::without_signers(

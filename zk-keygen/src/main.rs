@@ -1,6 +1,6 @@
 use {
     bip39::{Mnemonic, MnemonicType, Seed},
-    clap::{crate_description, crate_name, Arg, ArgMatches, Command, PossibleValue},
+    clap::{Arg, ArgMatches, Command, builder::PossibleValue},
     solana_clap_v3_utils::{
         input_parsers::{signer::SignerSourceParserBuilder, STDOUT_OUTFILE_TOKEN},
         keygen::{
@@ -37,8 +37,8 @@ fn output_encodable_key<K: EncodableKey>(
 }
 
 fn app(crate_version: &str) -> Command {
-    Command::new(crate_name!())
-        .about(crate_description!())
+    Command::new("solana-zk-keygen")
+        .about("Generate ZK encryption keys/keypairs for Solana")
         .version(crate_version)
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -49,7 +49,7 @@ fn app(crate_version: &str) -> Command {
                 .arg(
                     Arg::new("type")
                         .index(1)
-                        .takes_value(true)
+                        
                         .value_parser(clap::value_parser!(KeyType))
                         .value_name("TYPE")
                         .required(true)
@@ -60,7 +60,7 @@ fn app(crate_version: &str) -> Command {
                         .short('o')
                         .long("outfile")
                         .value_name("FILEPATH")
-                        .takes_value(true)
+                        
                         .help("Path to generated file"),
                 )
                 .arg(
@@ -83,7 +83,7 @@ fn app(crate_version: &str) -> Command {
                 .arg(
                     Arg::new("type")
                         .index(1)
-                        .takes_value(true)
+                        
                         .value_parser([
                             PossibleValue::new("elgamal")
                         ])
@@ -95,7 +95,7 @@ fn app(crate_version: &str) -> Command {
                     Arg::new("keypair")
                         .index(2)
                         .value_name("KEYPAIR")
-                        .takes_value(true)
+                        
                         .help("Filepath or URL to a keypair"),
                 )
                 .arg(
@@ -111,7 +111,7 @@ fn app(crate_version: &str) -> Command {
                 .arg(
                     Arg::new("type")
                         .index(1)
-                        .takes_value(true)
+                        
                         .value_parser(clap::value_parser!(KeyType))
                         .value_name("TYPE")
                         .required(true)
@@ -121,7 +121,7 @@ fn app(crate_version: &str) -> Command {
                     Arg::new("prompt_signer")
                         .index(2)
                         .value_name("KEYPAIR")
-                        .takes_value(true)
+                        
                         .value_parser(SignerSourceParserBuilder::default().allow_prompt().allow_legacy().build())
                         .help("`prompt:` URI scheme or `ASK` keyword"),
                 )
@@ -130,7 +130,7 @@ fn app(crate_version: &str) -> Command {
                         .short('o')
                         .long("outfile")
                         .value_name("FILEPATH")
-                        .takes_value(true)
+                        
                         .help("Path to generated file"),
                 )
                 .arg(

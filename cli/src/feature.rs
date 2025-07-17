@@ -11,9 +11,9 @@ use {
     console::style,
     serde::{Deserialize, Serialize},
     solana_account::Account,
-    solana_clap_utils::{
-        compute_budget::ComputeUnitLimit, fee_payer::*, hidden_unless_forced, input_parsers::*,
-        input_validators::*, keypair::*,
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{
+        fee_payer::*, input_parsers::*, input_validators::*, keypair::*,
     },
     solana_cli_output::{cli_version::CliVersion, QuietDisplay, VerboseDisplay},
     solana_clock::{Epoch, Slot},
@@ -438,7 +438,7 @@ pub trait FeatureSubCommands {
     fn feature_subcommands(self) -> Self;
 }
 
-impl FeatureSubCommands for App<'_, '_> {
+impl<'a> FeatureSubCommands for App<'a> {
     fn feature_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("feature")
@@ -450,7 +450,7 @@ impl FeatureSubCommands for App<'_, '_> {
                         .arg(
                             Arg::with_name("features")
                                 .value_name("ADDRESS")
-                                .validator(is_valid_pubkey)
+                                .validator(crate::clap_app::validate_pubkey)
                                 .index(1)
                                 .multiple(true)
                                 .help("Feature status to query [default: all known features]"),
@@ -467,7 +467,7 @@ impl FeatureSubCommands for App<'_, '_> {
                         .arg(
                             Arg::with_name("feature")
                                 .value_name("FEATURE_KEYPAIR")
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .index(1)
                                 .required(true)
                                 .help("The signer for the feature to activate"),
@@ -494,7 +494,7 @@ impl FeatureSubCommands for App<'_, '_> {
                         .arg(
                             Arg::with_name("feature")
                                 .value_name("FEATURE_KEYPAIR")
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .index(1)
                                 .required(true)
                                 .help("The signer for the feature to revoke"),
@@ -523,12 +523,12 @@ fn known_feature(feature: &Pubkey) -> Result<(), CliError> {
 }
 
 pub fn parse_feature_subcommand(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let response = match matches.subcommand() {
-        ("activate", Some(matches)) => {
+        Some(("activate", matches)) => {
             let cluster = value_t_or_exit!(matches, "cluster", ClusterType);
             let (feature_signer, feature) = signer_of(matches, "feature", wallet_manager)?;
             let (fee_payer, fee_payer_pubkey) =
@@ -560,7 +560,7 @@ pub fn parse_feature_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("revoke", Some(matches)) => {
+        Some(("revoke", matches)) => {
             let cluster = value_t_or_exit!(matches, "cluster", ClusterType);
             let (feature_signer, feature) = signer_of(matches, "feature", wallet_manager)?;
             let (fee_payer, fee_payer_pubkey) =
@@ -585,7 +585,7 @@ pub fn parse_feature_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("status", Some(matches)) => {
+        Some(("status", matches)) => {
             let mut features = if let Some(features) = pubkeys_of(matches, "features") {
                 for feature in &features {
                     known_feature(feature)?;

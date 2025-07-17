@@ -13,7 +13,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 bincode = { workspace = true }
-clap = { workspace = true }
+clap = "3.2.25"
 crossbeam-channel = { workspace = true }
 solana-clap-utils = { workspace = true }
 solana-client = { workspace = true }

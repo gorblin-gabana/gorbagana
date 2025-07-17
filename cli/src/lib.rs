@@ -12,7 +12,7 @@ macro_rules! ACCOUNT_STRING {
 macro_rules! pubkey {
     ($arg:expr, $help:expr) => {
         $arg.takes_value(true)
-            .validator(is_valid_pubkey)
+            .validator(crate::clap_app::validate_pubkey)
             .help(concat!($help, ACCOUNT_STRING!()))
     };
 }

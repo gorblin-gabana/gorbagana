@@ -1,5 +1,5 @@
 use {
-    crate::{input_validators::is_parsable, ArgConstant},
+    crate::{input_validators, ArgConstant},
     clap::Arg,
 };
 
@@ -15,21 +15,19 @@ pub const COMPUTE_UNIT_LIMIT_ARG: ArgConstant<'static> = ArgConstant {
     help: "Set compute unit limit for transaction.",
 };
 
-pub fn compute_unit_price_arg<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name(COMPUTE_UNIT_PRICE_ARG.name)
+pub fn compute_unit_price_arg<'help>() -> Arg<'help> {
+    Arg::new(COMPUTE_UNIT_PRICE_ARG.name)
         .long(COMPUTE_UNIT_PRICE_ARG.long)
-        .takes_value(true)
         .value_name("COMPUTE-UNIT-PRICE")
-        .validator(is_parsable::<u64>)
+        .validator(|s| input_validators::is_parsable_u64(s))
         .help(COMPUTE_UNIT_PRICE_ARG.help)
 }
 
-pub fn compute_unit_limit_arg<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name(COMPUTE_UNIT_LIMIT_ARG.name)
+pub fn compute_unit_limit_arg<'help>() -> Arg<'help> {
+    Arg::new(COMPUTE_UNIT_LIMIT_ARG.name)
         .long(COMPUTE_UNIT_LIMIT_ARG.long)
-        .takes_value(true)
         .value_name("COMPUTE-UNIT-LIMIT")
-        .validator(is_parsable::<u32>)
+        .validator(|s| input_validators::is_parsable_u32(s))
         .help(COMPUTE_UNIT_LIMIT_ARG.help)
 }
 

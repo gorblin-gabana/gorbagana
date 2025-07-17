@@ -82,7 +82,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bytemuck",
- "clap 4.5.41",
+ "clap 3.2.25",
  "memmap2 0.9.7",
  "rayon",
  "solana-accounts-db 3.0.0",
@@ -180,7 +180,7 @@ dependencies = [
  "bincode",
  "bzip2",
  "chrono",
- "clap 4.5.41",
+ "clap 3.2.25",
  "console 0.16.0",
  "crossbeam-channel",
  "ctrlc",
@@ -406,7 +406,7 @@ name = "agave-store-tool"
 version = "3.0.0"
 dependencies = [
  "ahash 0.8.12",
- "clap 4.5.41",
+ "clap 3.2.25",
  "rayon",
  "solana-account",
  "solana-accounts-db 3.0.0",
@@ -579,7 +579,7 @@ dependencies = [
 name = "agave-watchtower"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "humantime",
  "log",
  "solana-clap-utils 3.0.0",
@@ -1821,6 +1821,15 @@ dependencies = [
  "anstyle",
  "clap_lex 0.7.5",
  "strsim 0.11.1",
+]
+
+[[package]]
+name = "clap_complete"
+version = "3.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f7a2e0a962c45ce25afce14220bc24f9dade0a1787f185cecf96bfba7847cd8"
+dependencies = [
+ "clap 3.2.25",
 ]
 
 [[package]]
@@ -7005,7 +7014,7 @@ dependencies = [
 name = "solana-accounts-bench"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "log",
  "rayon",
  "solana-accounts-db 3.0.0",
@@ -7442,7 +7451,7 @@ dependencies = [
 name = "solana-bench-streamer"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "crossbeam-channel",
  "solana-net-utils 3.0.0",
  "solana-streamer 3.0.0",
@@ -7522,7 +7531,7 @@ name = "solana-bench-vote"
 version = "3.0.0"
 dependencies = [
  "bincode",
- "clap 4.5.41",
+ "clap 3.2.25",
  "crossbeam-channel",
  "solana-clap-utils 3.0.0",
  "solana-client 3.0.0",
@@ -7871,7 +7880,7 @@ dependencies = [
  "assert_cmd",
  "bzip2",
  "cargo_metadata",
- "clap 4.5.41",
+ "clap 3.2.25",
  "itertools 0.12.1",
  "log",
  "predicates 2.1.5",
@@ -7890,7 +7899,7 @@ name = "solana-cargo-test-sbf"
 version = "3.0.0"
 dependencies = [
  "cargo_metadata",
- "clap 4.5.41",
+ "clap 3.2.25",
  "itertools 0.12.1",
  "log",
  "regex",
@@ -7932,7 +7941,7 @@ version = "3.0.0"
 dependencies = [
  "assert_matches",
  "chrono",
- "clap 2.34.0",
+ "clap 3.2.25",
  "rpassword",
  "solana-clock",
  "solana-cluster-type",
@@ -7962,7 +7971,7 @@ version = "3.0.0"
 dependencies = [
  "assert_matches",
  "chrono",
- "clap 4.5.41",
+ "clap 3.2.25",
  "rpassword",
  "solana-clock",
  "solana-cluster-type",
@@ -7996,7 +8005,8 @@ dependencies = [
  "assert_matches",
  "bincode",
  "bs58",
- "clap 4.5.41",
+ "clap 3.2.25",
+ "clap_complete",
  "console 0.16.0",
  "const_format",
  "criterion-stats",
@@ -8018,6 +8028,7 @@ dependencies = [
  "solana-borsh",
  "solana-bpf-loader-program 3.0.0",
  "solana-clap-utils 3.0.0",
+ "solana-clap-v3-utils",
  "solana-cli-config 3.0.0",
  "solana-cli-output 3.0.0",
  "solana-client 3.0.0",
@@ -8165,7 +8176,7 @@ dependencies = [
  "agave-reserved-account-keys 3.0.0",
  "base64 0.22.1",
  "chrono",
- "clap 2.34.0",
+ "clap 3.2.25",
  "console 0.16.0",
  "ed25519-dalek",
  "humantime",
@@ -9078,7 +9089,7 @@ name = "solana-faucet"
 version = "3.0.0"
 dependencies = [
  "bincode",
- "clap 4.5.41",
+ "clap 3.2.25",
  "crossbeam-channel",
  "log",
  "serde",
@@ -9533,7 +9544,7 @@ name = "solana-keygen"
 version = "3.0.0"
 dependencies = [
  "bs58",
- "clap 4.5.41",
+ "clap 3.2.25",
  "dirs-next",
  "num_cpus",
  "serde_json",
@@ -10032,7 +10043,7 @@ checksum = "307fb2f78060995979e9b4f68f833623565ed4e55d3725f100454ce78a99a1a3"
 name = "solana-net-shaper"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "rand 0.8.5",
  "serde",
  "serde_derive",
@@ -10273,7 +10284,7 @@ dependencies = [
 name = "solana-poh-bench"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "log",
  "rayon",
  "solana-entry",
@@ -11246,12 +11257,12 @@ name = "solana-rpc-client-nonce-utils"
 version = "3.0.0"
 dependencies = [
  "anyhow",
- "clap 2.34.0",
+ "clap 3.2.25",
  "futures 0.3.31",
  "serde_json",
  "solana-account",
  "solana-account-decoder 3.0.0",
- "solana-clap-utils 3.0.0",
+ "solana-clap-v3-utils",
  "solana-commitment-config",
  "solana-fee-calculator",
  "solana-hash",
@@ -12090,7 +12101,7 @@ dependencies = [
 name = "solana-stake-accounts"
 version = "3.0.0"
 dependencies = [
- "clap 4.5.41",
+ "clap 3.2.25",
  "solana-account",
  "solana-clap-utils 3.0.0",
  "solana-cli-config 3.0.0",
@@ -12929,7 +12940,7 @@ dependencies = [
  "assert_matches",
  "bincode",
  "chrono",
- "clap 2.34.0",
+ "clap 3.2.25",
  "console 0.16.0",
  "csv",
  "ctrlc",
@@ -13939,7 +13950,7 @@ name = "solana-zk-keygen"
 version = "3.0.0"
 dependencies = [
  "bs58",
- "clap 4.5.41",
+ "clap 3.2.25",
  "dirs-next",
  "solana-clap-v3-utils",
  "solana-pubkey",

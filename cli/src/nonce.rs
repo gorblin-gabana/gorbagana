@@ -13,8 +13,9 @@ use {
     },
     clap::{App, Arg, ArgMatches, SubCommand},
     solana_account::Account,
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
+    solana_clap_utils::compute_budget::ComputeUnitLimit,
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         input_parsers::*,
         input_validators::*,
         keypair::{CliSigners, DefaultSigner, SignerIndex},
@@ -45,7 +46,7 @@ pub trait NonceSubCommands {
     fn nonce_subcommands(self) -> Self;
 }
 
-impl NonceSubCommands for App<'_, '_> {
+impl<'a> NonceSubCommands for App<'a> {
     fn nonce_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("authorize-nonce-account")
@@ -77,7 +78,7 @@ impl NonceSubCommands for App<'_, '_> {
                         .value_name("ACCOUNT_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of the nonce account to fund"),
                 )
                 .arg(
@@ -86,7 +87,7 @@ impl NonceSubCommands for App<'_, '_> {
                         .value_name("AMOUNT")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_amount_or_all)
+                        .validator(crate::clap_app::validate_amount_or_all)
                         .help(
                             "The amount to load the nonce account with, in SOL; accepts keyword \
                              ALL",
@@ -178,7 +179,7 @@ impl NonceSubCommands for App<'_, '_> {
                         .value_name("AMOUNT")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_amount)
+                        .validator(crate::clap_app::validate_amount)
                         .help("The amount to withdraw from the nonce account, in SOL"),
                 )
                 .arg(nonce_authority_arg())
@@ -205,7 +206,7 @@ impl NonceSubCommands for App<'_, '_> {
 }
 
 pub fn parse_authorize_nonce_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -236,7 +237,7 @@ pub fn parse_authorize_nonce_account(
 }
 
 pub fn parse_nonce_create_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -269,7 +270,7 @@ pub fn parse_nonce_create_account(
 }
 
 pub fn parse_get_nonce(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let nonce_account_pubkey =
@@ -281,7 +282,7 @@ pub fn parse_get_nonce(
 }
 
 pub fn parse_new_nonce(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -310,7 +311,7 @@ pub fn parse_new_nonce(
 }
 
 pub fn parse_show_nonce_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let nonce_account_pubkey =
@@ -326,7 +327,7 @@ pub fn parse_show_nonce_account(
 }
 
 pub fn parse_withdraw_from_nonce_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -360,7 +361,7 @@ pub fn parse_withdraw_from_nonce_account(
 }
 
 pub(crate) fn parse_upgrade_nonce_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<CliCommandInfo, CliError> {
     let nonce_account = pubkey_of(matches, "nonce_account_pubkey").unwrap();
     let memo = matches.value_of(MEMO_ARG.name).map(String::from);

@@ -1,8 +1,8 @@
 #[cfg(feature = "clap")]
 use {
     clap::ArgMatches,
-    solana_clap_utils::{
-        input_parsers::{pubkey_of, value_of},
+    solana_clap_v3_utils::{
+        input_parsers::signer::try_pubkey_of,
         nonce::*,
         offline::*,
     },
@@ -75,10 +75,11 @@ impl BlockhashQuery {
     }
 
     #[cfg(feature = "clap")]
-    pub fn new_from_matches(matches: &ArgMatches<'_>) -> Self {
-        let blockhash = value_of(matches, BLOCKHASH_ARG.name);
-        let sign_only = matches.is_present(SIGN_ONLY_ARG.name);
-        let nonce_account = pubkey_of(matches, NONCE_ARG.name);
+    pub fn new_from_matches(matches: &ArgMatches) -> Self {
+        let blockhash = matches.get_one::<String>(BLOCKHASH_ARG.name)
+            .map(|s| s.parse().expect("Invalid blockhash"));
+        let sign_only = matches.get_flag(SIGN_ONLY_ARG.name);
+        let nonce_account = try_pubkey_of(matches, NONCE_ARG.name).unwrap_or(None);
         BlockhashQuery::new(blockhash, sign_only, nonce_account)
     }
 

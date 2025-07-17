@@ -11,10 +11,10 @@ use {
     },
     clap::{value_t_or_exit, App, Arg, ArgMatches, SubCommand},
     hex::FromHex,
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
+    solana_clap_utils::{compute_budget::ComputeUnitLimit, hidden_unless_forced},
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         fee_payer::*,
-        hidden_unless_forced,
         input_parsers::*,
         input_validators::*,
         keypair::{DefaultSigner, SignerIndex},
@@ -51,7 +51,7 @@ pub trait WalletSubCommands {
     fn wallet_subcommands(self) -> Self;
 }
 
-impl WalletSubCommands for App<'_, '_> {
+impl<'a> WalletSubCommands for App<'a> {
     fn wallet_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("account")
@@ -67,7 +67,7 @@ impl WalletSubCommands for App<'_, '_> {
                 .arg(
                     Arg::with_name("output_file")
                         .long("output-file")
-                        .short("o")
+                        .short('o')
                         .value_name("FILEPATH")
                         .takes_value(true)
                         .help("Write the account data to this file"),
@@ -97,7 +97,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .index(1)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount)
+                        .validator(crate::clap_app::validate_amount)
                         .required(true)
                         .help("The airdrop amount to request, in SOL"),
                 )
@@ -161,7 +161,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .value_name("SEED_STRING")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_derived_address_seed)
+                        .validator(crate::clap_app::validate_derived_address_seed)
                         .help("The seed.  Must not take more than 32 bytes to encode as utf-8"),
                 )
                 .arg(
@@ -202,7 +202,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .min_values(0)
                         .value_name("SEED")
                         .takes_value(true)
-                        .validator(is_structured_seed)
+                        .validator(crate::clap_app::validate_structured_seed)
                         .help(
                             "The seeds. \n\
                             Each one must match the pattern PREFIX:VALUE. \n\
@@ -249,7 +249,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .value_name("SIGNER_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("The signer path to resolve"),
                 ),
         )
@@ -269,7 +269,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AMOUNT")
                         .takes_value(true)
-                        .validator(is_amount_or_all)
+                        .validator(crate::clap_app::validate_amount_or_all)
                         .required(true)
                         .help("The amount to send, in SOL; accepts keyword ALL"),
                 )
@@ -294,7 +294,7 @@ impl WalletSubCommands for App<'_, '_> {
                         .takes_value(true)
                         .value_name("SEED_STRING")
                         .requires("derived_address_program_id")
-                        .validator(is_derived_address_seed)
+                        .validator(crate::clap_app::validate_derived_address_seed)
                         .hidden(hidden_unless_forced()),
                 )
                 .arg(
@@ -385,7 +385,7 @@ impl WalletSubCommands for App<'_, '_> {
     }
 }
 
-fn resolve_derived_address_program_id(matches: &ArgMatches<'_>, arg_name: &str) -> Option<Pubkey> {
+fn resolve_derived_address_program_id(matches: &ArgMatches, arg_name: &str) -> Option<Pubkey> {
     matches.value_of(arg_name).and_then(|v| {
         let upper = v.to_ascii_uppercase();
         match upper.as_str() {
@@ -398,7 +398,7 @@ fn resolve_derived_address_program_id(matches: &ArgMatches<'_>, arg_name: &str) 
 }
 
 pub fn parse_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let account_pubkey = pubkey_of_signer(matches, "account_pubkey", wallet_manager)?.unwrap();
@@ -412,7 +412,7 @@ pub fn parse_account(
 }
 
 pub fn parse_airdrop(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -430,7 +430,7 @@ pub fn parse_airdrop(
 }
 
 pub fn parse_balance(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -449,7 +449,7 @@ pub fn parse_balance(
     })
 }
 
-pub fn parse_decode_transaction(matches: &ArgMatches<'_>) -> Result<CliCommandInfo, CliError> {
+pub fn parse_decode_transaction(matches: &ArgMatches) -> Result<CliCommandInfo, CliError> {
     let blob = value_t_or_exit!(matches, "transaction", String);
     let binary_encoding = match matches.value_of("encoding").unwrap() {
         "base58" => TransactionBinaryEncoding::Base58,
@@ -470,7 +470,7 @@ pub fn parse_decode_transaction(matches: &ArgMatches<'_>) -> Result<CliCommandIn
 }
 
 pub fn parse_create_address_with_seed(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -496,7 +496,7 @@ pub fn parse_create_address_with_seed(
 }
 
 pub fn parse_find_program_derived_address(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<CliCommandInfo, CliError> {
     let program_id = resolve_derived_address_program_id(matches, "program_id")
         .ok_or_else(|| CliError::BadParameter("PROGRAM_ID".to_string()))?;
@@ -541,7 +541,7 @@ pub fn parse_find_program_derived_address(
 }
 
 pub fn parse_transfer(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -597,7 +597,7 @@ pub fn parse_transfer(
 }
 
 pub fn parse_sign_offchain_message(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -614,7 +614,7 @@ pub fn parse_sign_offchain_message(
 }
 
 pub fn parse_verify_offchain_signature(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {

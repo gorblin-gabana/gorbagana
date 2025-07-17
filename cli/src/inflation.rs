@@ -1,7 +1,7 @@
 use {
     crate::cli::{CliCommand, CliCommandInfo, CliConfig, CliError, ProcessResult},
     clap::{App, Arg, ArgMatches, SubCommand},
-    solana_clap_utils::{
+    solana_clap_v3_utils::{
         input_parsers::{pubkeys_of, value_of},
         input_validators::is_valid_pubkey,
         keypair::*,
@@ -26,7 +26,7 @@ pub trait InflationSubCommands {
     fn inflation_subcommands(self) -> Self;
 }
 
-impl InflationSubCommands for App<'_, '_> {
+impl<'a> InflationSubCommands for App<'a> {
     fn inflation_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("inflation")
@@ -55,12 +55,12 @@ impl InflationSubCommands for App<'_, '_> {
 }
 
 pub fn parse_inflation_subcommand(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     _default_signer: &DefaultSigner,
     _wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let command = match matches.subcommand() {
-        ("rewards", Some(matches)) => {
+        Some(("rewards", matches)) => {
             let addresses = pubkeys_of(matches, "addresses").unwrap();
             let rewards_epoch = value_of(matches, "rewards_epoch");
             InflationCliCommand::Rewards(addresses, rewards_epoch)

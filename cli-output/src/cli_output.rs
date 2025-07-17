@@ -87,10 +87,10 @@ impl OutputFormat {
         }
     }
 
-    pub fn from_matches(matches: &ArgMatches<'_>, output_name: &str, verbose: bool) -> Self {
+    pub fn from_matches(matches: &ArgMatches, output_name: &str, verbose: bool) -> Self {
         matches
-            .value_of(output_name)
-            .map(|value| match value {
+            .get_one::<String>(output_name)
+            .map(|value| match value.as_str() {
                 "json" => OutputFormat::Json,
                 "json-compact" => OutputFormat::JsonCompact,
                 _ => unreachable!(),

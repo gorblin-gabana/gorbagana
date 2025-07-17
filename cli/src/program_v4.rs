@@ -13,8 +13,9 @@ use {
     log::*,
     solana_account::Account,
     solana_account_decoder::{UiAccountEncoding, UiDataSliceConfig},
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit},
+    solana_clap_utils::compute_budget::ComputeUnitLimit,
+    solana_clap_v3_utils::{
+        compute_budget::compute_unit_price_arg,
         input_parsers::{pubkey_of, pubkey_of_signer, signer_of},
         input_validators::{is_valid_pubkey, is_valid_signer},
         keypair::{DefaultSigner, SignerIndex},
@@ -78,7 +79,7 @@ pub struct AdditionalCliConfig {
 }
 
 impl AdditionalCliConfig {
-    fn from_matches(matches: &ArgMatches<'_>) -> Self {
+    fn from_matches(matches: &ArgMatches) -> Self {
         Self {
             use_rpc: matches.is_present("use-rpc"),
             sign_only: matches.is_present(SIGN_ONLY_ARG.name),
@@ -133,7 +134,7 @@ pub trait ProgramV4SubCommands {
     fn program_v4_subcommands(self) -> Self;
 }
 
-impl ProgramV4SubCommands for App<'_, '_> {
+impl<'a> ProgramV4SubCommands for App<'a> {
     fn program_v4_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("program-v4")
@@ -168,7 +169,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("program-keypair")
                                 .value_name("PROGRAM_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Program account signer for deploying a new program",
                                 ),
@@ -185,7 +186,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("buffer")
                                 .value_name("BUFFER_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Optional intermediate buffer account to write data to",
                                 ),
@@ -195,7 +196,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Program authority [default: the default configured keypair]",
                                 ),
@@ -222,7 +223,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Program authority [default: the default configured keypair]",
                                 ),
@@ -251,7 +252,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Current program authority [default: the default configured keypair]",
                                 ),
@@ -262,7 +263,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .value_name("NEW_AUTHORITY_SIGNER")
                                 .takes_value(true)
                                 .required(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "New program authority",
                                 ),
@@ -286,7 +287,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("authority")
                                 .value_name("AUTHORITY_SIGNER")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Program authority [default: the default configured keypair]",
                                 ),
@@ -296,7 +297,7 @@ impl ProgramV4SubCommands for App<'_, '_> {
                                 .long("next-version")
                                 .value_name("NEXT_VERSION")
                                 .takes_value(true)
-                                .validator(is_valid_signer)
+                                .validator(crate::clap_app::validate_signer)
                                 .help(
                                     "Reserves the address and links it as the programs next-version, which is a hint that frontends can show to users",
                                 ),
@@ -352,13 +353,16 @@ impl ProgramV4SubCommands for App<'_, '_> {
 }
 
 pub fn parse_program_v4_subcommand(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
-    let (subcommand, sub_matches) = matches.subcommand();
-    let response = match (subcommand, sub_matches) {
-        ("deploy", Some(matches)) => {
+    let Some((subcommand, sub_matches)) = matches.subcommand() else {
+        return Err(CliError::CommandNotRecognized("No subcommand provided".to_string()));
+    };
+    let response = match subcommand {
+        "deploy" => {
+            let matches = sub_matches;
             let mut bulk_signers = vec![Some(
                 default_signer.signer_from_path(matches, wallet_manager)?,
             )];
@@ -419,7 +423,8 @@ pub fn parse_program_v4_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("retract", Some(matches)) => {
+        "retract" => {
+            let matches = sub_matches;
             let mut bulk_signers = vec![Some(
                 default_signer.signer_from_path(matches, wallet_manager)?,
             )];
@@ -443,7 +448,8 @@ pub fn parse_program_v4_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("transfer-authority", Some(matches)) => {
+        "transfer-authority" => {
+            let matches = sub_matches;
             let mut bulk_signers = vec![Some(
                 default_signer.signer_from_path(matches, wallet_manager)?,
             )];
@@ -473,7 +479,8 @@ pub fn parse_program_v4_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("finalize", Some(matches)) => {
+        "finalize" => {
+            let matches = sub_matches;
             let mut bulk_signers = vec![Some(
                 default_signer.signer_from_path(matches, wallet_manager)?,
             )];
@@ -506,7 +513,8 @@ pub fn parse_program_v4_subcommand(
                 signers: signer_info.signers,
             }
         }
-        ("show", Some(matches)) => {
+        "show" => {
+            let matches = sub_matches;
             let authority =
                 if let Some(authority) = pubkey_of_signer(matches, "authority", wallet_manager)? {
                     authority
@@ -522,7 +530,8 @@ pub fn parse_program_v4_subcommand(
                 all: matches.is_present("all"),
             }))
         }
-        ("download", Some(matches)) => {
+        "download" => {
+            let matches = sub_matches;
             CliCommandInfo::without_signers(CliCommand::ProgramV4(ProgramV4CliCommand::Dump {
                 account_pubkey: pubkey_of(matches, "program-id"),
                 output_location: matches.value_of("path-to-elf").unwrap().to_string(),

@@ -15,8 +15,9 @@ use {
     },
     clap::{value_t_or_exit, App, Arg, ArgMatches, SubCommand},
     solana_account::Account,
-    solana_clap_utils::{
-        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
+    solana_clap_utils::compute_budget::ComputeUnitLimit,
+    solana_clap_v3_utils::{
+        compute_budget::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
         fee_payer::{fee_payer_arg, FEE_PAYER_ARG},
         input_parsers::*,
         input_validators::*,
@@ -53,7 +54,7 @@ pub trait VoteSubCommands {
     fn vote_subcommands(self) -> Self;
 }
 
-impl VoteSubCommands for App<'_, '_> {
+impl<'a> VoteSubCommands for App<'a> {
     fn vote_subcommands(self) -> Self {
         self.subcommand(
             SubCommand::with_name("create-vote-account")
@@ -64,7 +65,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("ACCOUNT_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Vote account keypair to create"),
                 )
                 .arg(
@@ -73,7 +74,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("IDENTITY_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of validator that will vote with this account"),
                 )
                 .arg(pubkey!(
@@ -140,7 +141,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Current authorized vote signer."),
                 )
                 .arg(pubkey!(
@@ -171,7 +172,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Current authorized withdrawer."),
                 )
                 .arg(pubkey!(
@@ -205,7 +206,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Current authorized vote signer."),
                 )
                 .arg(
@@ -213,7 +214,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(3)
                         .value_name("NEW_AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("New authorized vote signer."),
                 )
                 .offline_args()
@@ -240,7 +241,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(2)
                         .value_name("AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Current authorized withdrawer."),
                 )
                 .arg(
@@ -248,7 +249,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .index(3)
                         .value_name("NEW_AUTHORIZED_KEYPAIR")
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("New authorized withdrawer."),
                 )
                 .offline_args()
@@ -273,7 +274,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("IDENTITY_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Keypair of new validator that will vote with this account"),
                 )
                 .arg(
@@ -282,7 +283,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("AUTHORIZED_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Authorized withdrawer keypair"),
                 )
                 .offline_args()
@@ -307,7 +308,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("PERCENTAGE")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_percentage)
+                        .validator(crate::clap_app::validate_percentage)
                         .help("The new commission"),
                 )
                 .arg(
@@ -316,7 +317,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("AUTHORIZED_KEYPAIR")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Authorized withdrawer keypair"),
                 )
                 .offline_args()
@@ -367,8 +368,8 @@ impl VoteSubCommands for App<'_, '_> {
                         .long("num-rewards-epochs")
                         .takes_value(true)
                         .value_name("NUM")
-                        .validator(|s| is_within_range(s, 1..=50))
-                        .default_value_if("with_rewards", None, "1")
+                        .validator(|s| is_within_range(s.to_string(), 1..=50))
+                        .default_value_if("with_rewards", None, Some("1"))
                         .requires("with_rewards")
                         .help(
                             "Display rewards for NUM recent epochs, max 10 \
@@ -399,7 +400,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .value_name("AMOUNT")
                         .takes_value(true)
                         .required(true)
-                        .validator(is_amount_or_all)
+                        .validator(crate::clap_app::validate_amount_or_all)
                         .help(
                             "The amount to withdraw, in SOL; accepts keyword ALL, which for this \
                              command means account balance minus rent-exempt minimum",
@@ -410,7 +411,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .long("authorized-withdrawer")
                         .value_name("AUTHORIZED_KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Authorized withdrawer [default: cli config keypair]"),
                 )
                 .offline_args()
@@ -441,7 +442,7 @@ impl VoteSubCommands for App<'_, '_> {
                         .long("authorized-withdrawer")
                         .value_name("AUTHORIZED_KEYPAIR")
                         .takes_value(true)
-                        .validator(is_valid_signer)
+                        .validator(crate::clap_app::validate_signer)
                         .help("Authorized withdrawer [default: cli config keypair]"),
                 )
                 .arg(fee_payer_arg())
@@ -452,7 +453,7 @@ impl VoteSubCommands for App<'_, '_> {
 }
 
 pub fn parse_create_vote_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -521,7 +522,7 @@ pub fn parse_create_vote_account(
 }
 
 pub fn parse_vote_authorize(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     vote_authorize: VoteAuthorize,
@@ -582,7 +583,7 @@ pub fn parse_vote_authorize(
 }
 
 pub fn parse_vote_update_validator(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -629,7 +630,7 @@ pub fn parse_vote_update_validator(
 }
 
 pub fn parse_vote_update_commission(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -675,7 +676,7 @@ pub fn parse_vote_update_commission(
 }
 
 pub fn parse_vote_get_account_command(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
     let vote_account_pubkey =
@@ -700,7 +701,7 @@ pub fn parse_vote_get_account_command(
 }
 
 pub fn parse_withdraw_from_vote_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {
@@ -756,7 +757,7 @@ pub fn parse_withdraw_from_vote_account(
 }
 
 pub fn parse_close_vote_account(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     default_signer: &DefaultSigner,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<CliCommandInfo, CliError> {

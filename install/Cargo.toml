@@ -17,7 +17,7 @@ atty = { workspace = true }
 bincode = { workspace = true }
 bzip2 = { workspace = true }
 chrono = { workspace = true, features = ["default", "serde"] }
-clap = { workspace = true }
+clap = "3.2.25"
 console = { workspace = true }
 crossbeam-channel = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }

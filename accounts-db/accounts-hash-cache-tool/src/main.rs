@@ -3,7 +3,7 @@ use {
     anyhow::{anyhow, Context as _, Result},
     bytemuck::Zeroable as _,
     clap::{
-        crate_description, crate_name, value_t_or_exit, values_t_or_exit, App, AppSettings, Arg,
+        value_t_or_exit, values_t_or_exit, App, AppSettings, Arg,
         ArgMatches, SubCommand,
     },
     memmap2::Mmap,
@@ -13,7 +13,7 @@ use {
         pubkey_bins::PubkeyBinCalculator24, CacheHashDataFileEntry, CacheHashDataFileHeader,
         ParsedCacheHashDataFilename,
     },
-    solana_clap_utils::input_parsers::values_of,
+
     solana_pubkey::Pubkey,
     std::{
         cmp::{self, Ordering},
@@ -40,14 +40,14 @@ const CMD_DIFF_STATE: &str = "state";
 const DEFAULT_BINS: &str = "8192";
 
 fn main() -> Result<()> {
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
+    let matches = App::new("agave-accounts-hash-cache-tool")
+        .about("Tool for accounts hash cache files")
         .version(solana_version::version!())
         .global_setting(AppSettings::ArgRequiredElseHelp)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::InferSubcommands)
         .global_setting(AppSettings::UnifiedHelpMessage)
-        .global_setting(AppSettings::VersionlessSubcommands)
+        // VersionlessSubcommands not available in clap v3
         .subcommand(
             SubCommand::with_name(CMD_INSPECT)
                 .about(
@@ -55,13 +55,13 @@ fn main() -> Result<()> {
                      each account's address, hash, and balance",
                 )
                 .arg(
-                    Arg::with_name("force")
+                    Arg::new("force")
                         .long("force")
                         .takes_value(false)
                         .help("Continue even if sanity checks fail"),
                 )
                 .arg(
-                    Arg::with_name("path")
+                    Arg::new("path")
                         .index(1)
                         .takes_value(true)
                         .value_name("PATH")
@@ -72,18 +72,18 @@ fn main() -> Result<()> {
             SubCommand::with_name(CMD_SEARCH)
                 .about("Search for accounts hash cache entries")
                 .arg(
-                    Arg::with_name("path")
+                    Arg::new("path")
                         .index(1)
                         .takes_value(true)
                         .value_name("PATH")
                         .help("Accounts hash cache directory to search"),
                 )
                 .arg(
-                    Arg::with_name("addresses")
+                    Arg::new("addresses")
                     .index(2)
                     .takes_value(true)
                     .value_name("PUBKEYS")
-                    .value_delimiter(",")
+                    .value_delimiter(',')
                     .help("Search for the entries of one or more pubkeys, delimited by commas"),
                 ),
         )
@@ -94,14 +94,14 @@ fn main() -> Result<()> {
                     SubCommand::with_name(CMD_DIFF_FILES)
                         .about("Diff two accounts hash cache files")
                         .arg(
-                            Arg::with_name("path1")
+                            Arg::new("path1")
                                 .index(1)
                                 .takes_value(true)
                                 .value_name("PATH1")
                                 .help("Accounts hash cache file 1 to diff"),
                         )
                         .arg(
-                            Arg::with_name("path2")
+                            Arg::new("path2")
                                 .index(2)
                                 .takes_value(true)
                                 .value_name("PATH2")
@@ -112,21 +112,21 @@ fn main() -> Result<()> {
                     SubCommand::with_name(CMD_DIFF_DIRS)
                         .about("Diff two accounts hash cache directories")
                         .arg(
-                            Arg::with_name("path1")
+                            Arg::new("path1")
                                 .index(1)
                                 .takes_value(true)
                                 .value_name("PATH1")
                                 .help("Accounts hash cache directory 1 to diff"),
                         )
                         .arg(
-                            Arg::with_name("path2")
+                            Arg::new("path2")
                                 .index(2)
                                 .takes_value(true)
                                 .value_name("PATH2")
                                 .help("Accounts hash cache directory 2 to diff"),
                         )
                         .arg(
-                            Arg::with_name("then_diff_files")
+                            Arg::new("then_diff_files")
                                 .long("then-diff-files")
                                 .takes_value(false)
                                 .help("After diff-ing the directories, diff the files that were found to have mismatches"),
@@ -141,21 +141,21 @@ fn main() -> Result<()> {
                              the final states for anything missing or mismatching."
                         )
                         .arg(
-                            Arg::with_name("path1")
+                            Arg::new("path1")
                                 .index(1)
                                 .takes_value(true)
                                 .value_name("PATH1")
                                 .help("Accounts hash cache directory 1 to diff"),
                         )
                         .arg(
-                            Arg::with_name("path2")
+                            Arg::new("path2")
                                 .index(2)
                                 .takes_value(true)
                                 .value_name("PATH2")
                                 .help("Accounts hash cache directory 2 to diff"),
                         )
                         .arg(
-                            Arg::with_name("bins")
+                            Arg::new("bins")
                                 .long("bins")
                                 .takes_value(true)
                                 .value_name("NUM")
@@ -169,13 +169,13 @@ fn main() -> Result<()> {
                                 ),
                         )
                         .arg(
-                            Arg::with_name("bins_of_interest")
+                            Arg::new("bins_of_interest")
                                 .long("bins-of-interest")
                                 .takes_value(true)
                                 .value_name("BINS")
                                 .min_values(1)
                                 .max_values(2)
-                                .value_delimiter("-")
+                                .value_delimiter('-')
                                 .require_delimiter(true)
                                 .multiple(false)
                                 .help("Specifies bins to diff")
@@ -193,40 +193,49 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let subcommand = matches.subcommand();
-    let mut command_str = subcommand.0.to_string();
-    match subcommand {
-        (CMD_INSPECT, Some(subcommand_matches)) => cmd_inspect(&matches, subcommand_matches),
-        (CMD_SEARCH, Some(subcommand_matches)) => cmd_search(&matches, subcommand_matches),
-        (CMD_DIFF, Some(subcommand_matches)) => {
-            let diff_subcommand = subcommand_matches.subcommand();
-            command_str += " ";
-            command_str += diff_subcommand.0;
-            match diff_subcommand {
-                (CMD_DIFF_FILES, Some(diff_subcommand_matches)) => {
+    let mut command_str = String::new();
+    let result = match matches.subcommand() {
+        Some((CMD_INSPECT, subcommand_matches)) => {
+            command_str = CMD_INSPECT.to_string();
+            cmd_inspect(&matches, subcommand_matches)
+        }
+        Some((CMD_SEARCH, subcommand_matches)) => {
+            command_str = CMD_SEARCH.to_string();
+            cmd_search(&matches, subcommand_matches)
+        }
+        Some((CMD_DIFF, subcommand_matches)) => {
+            command_str = CMD_DIFF.to_string();
+            match subcommand_matches.subcommand() {
+                Some((CMD_DIFF_FILES, diff_subcommand_matches)) => {
+                    command_str += " ";
+                    command_str += CMD_DIFF_FILES;
                     cmd_diff_files(&matches, diff_subcommand_matches)
                 }
-                (CMD_DIFF_DIRS, Some(diff_subcommand_matches)) => {
+                Some((CMD_DIFF_DIRS, diff_subcommand_matches)) => {
+                    command_str += " ";
+                    command_str += CMD_DIFF_DIRS;
                     cmd_diff_dirs(&matches, diff_subcommand_matches)
                 }
-                (CMD_DIFF_STATE, Some(diff_subcommand_matches)) => {
+                Some((CMD_DIFF_STATE, diff_subcommand_matches)) => {
+                    command_str += " ";
+                    command_str += CMD_DIFF_STATE;
                     cmd_diff_state(&matches, diff_subcommand_matches)
                 }
                 _ => unreachable!(),
             }
         }
         _ => unreachable!(),
-    }
-    .with_context(|| format!("'{command_str}' failed"))
+    };
+    result.with_context(|| format!("'{command_str}' failed"))
 }
 
-fn cmd_inspect(_app_matches: &ArgMatches<'_>, subcommand_matches: &ArgMatches<'_>) -> Result<()> {
+fn cmd_inspect(_app_matches: &ArgMatches, subcommand_matches: &ArgMatches) -> Result<()> {
     let force = subcommand_matches.is_present("force");
     let path = value_t_or_exit!(subcommand_matches, "path", String);
     do_inspect(path, force)
 }
 
-fn cmd_search(_app_matches: &ArgMatches<'_>, subcommand_matches: &ArgMatches<'_>) -> Result<()> {
+fn cmd_search(_app_matches: &ArgMatches, subcommand_matches: &ArgMatches) -> Result<()> {
     let path = value_t_or_exit!(subcommand_matches, "path", String);
     let addresses = values_t_or_exit!(subcommand_matches, "addresses", Pubkey);
     let addresses = HashSet::from_iter(addresses);
@@ -234,15 +243,15 @@ fn cmd_search(_app_matches: &ArgMatches<'_>, subcommand_matches: &ArgMatches<'_>
 }
 
 fn cmd_diff_files(
-    _app_matches: &ArgMatches<'_>,
-    subcommand_matches: &ArgMatches<'_>,
+    _app_matches: &ArgMatches,
+    subcommand_matches: &ArgMatches,
 ) -> Result<()> {
     let path1 = value_t_or_exit!(subcommand_matches, "path1", String);
     let path2 = value_t_or_exit!(subcommand_matches, "path2", String);
     do_diff_files(path1, path2)
 }
 
-fn cmd_diff_dirs(_app_matches: &ArgMatches<'_>, subcommand_matches: &ArgMatches<'_>) -> Result<()> {
+fn cmd_diff_dirs(_app_matches: &ArgMatches, subcommand_matches: &ArgMatches) -> Result<()> {
     let path1 = value_t_or_exit!(subcommand_matches, "path1", String);
     let path2 = value_t_or_exit!(subcommand_matches, "path2", String);
     let then_diff_files = subcommand_matches.is_present("then_diff_files");
@@ -250,15 +259,16 @@ fn cmd_diff_dirs(_app_matches: &ArgMatches<'_>, subcommand_matches: &ArgMatches<
 }
 
 fn cmd_diff_state(
-    _app_matches: &ArgMatches<'_>,
-    subcommand_matches: &ArgMatches<'_>,
+    _app_matches: &ArgMatches,
+    subcommand_matches: &ArgMatches,
 ) -> Result<()> {
     let path1 = value_t_or_exit!(subcommand_matches, "path1", String);
     let path2 = value_t_or_exit!(subcommand_matches, "path2", String);
     let num_bins = value_t_or_exit!(subcommand_matches, "bins", usize);
 
     let bins_of_interest =
-        if let Some(bins) = values_of::<usize>(subcommand_matches, "bins_of_interest") {
+        if subcommand_matches.is_present("bins_of_interest") {
+            let bins = values_t_or_exit!(subcommand_matches, "bins_of_interest", usize);
             match bins.len() {
                 1 => bins[0]..bins[0].saturating_add(1),
                 2 => bins[0]..bins[1],

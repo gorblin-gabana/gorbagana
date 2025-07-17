@@ -18,7 +18,7 @@ path = "src/keygen.rs"
 
 [dependencies]
 bs58 = { workspace = true }
-clap = { workspace = true, features = ["cargo"] }
+clap = "3.2.25"
 dirs-next = { workspace = true }
 num_cpus = { workspace = true }
 serde_json = { workspace = true }

@@ -10,6 +10,7 @@ use {
     solana_pubkey::{Pubkey, MAX_SEED_LEN},
     solana_signature::Signature,
     std::{fmt::Display, ops::RangeBounds, str::FromStr},
+
 };
 
 fn is_parsable_generic<U, T>(string: T) -> Result<(), String>
@@ -456,6 +457,31 @@ pub fn is_non_zero(value: impl AsRef<str>) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+// Simple wrapper functions for clap v3 validators (without generics)
+pub fn is_valid_signer_simple(string: &str) -> Result<(), String> {
+    is_valid_signer(string)
+}
+
+pub fn is_valid_pubkey_simple(string: &str) -> Result<(), String> {
+    is_valid_pubkey(string)
+}
+
+pub fn is_hash_simple(string: &str) -> Result<(), String> {
+    is_hash(string)
+}
+
+pub fn is_pubkey_sig_simple(string: &str) -> Result<(), String> {
+    is_pubkey_sig(string)
+}
+
+pub fn is_parsable_u64(string: &str) -> Result<(), String> {
+    is_parsable::<u64>(string.to_string())
+}
+
+pub fn is_parsable_u32(string: &str) -> Result<(), String> {
+    is_parsable::<u32>(string.to_string())
 }
 
 #[cfg(test)]

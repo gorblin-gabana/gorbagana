@@ -2,7 +2,7 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use {
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, values_t, App, Arg},
+    clap::{value_t, value_t_or_exit, values_t, App, Arg},
     log::*,
     solana_clap_utils::{
         hidden_unless_forced,
@@ -25,6 +25,19 @@ use {
     },
 };
 
+// Validator wrapper functions for clap v3 compatibility
+fn validator_is_url(s: &str) -> Result<(), String> {
+    is_url(s)
+}
+
+fn validator_is_pubkey_or_keypair(s: &str) -> Result<(), String> {
+    is_pubkey_or_keypair(s)
+}
+
+fn validator_is_valid_percentage(s: &str) -> Result<(), String> {
+    is_valid_percentage(s)
+}
+
 struct Config {
     address_labels: HashMap<String, String>,
     ignore_http_bad_gateway: bool,
@@ -41,8 +54,8 @@ struct Config {
 }
 
 fn get_config() -> Config {
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
+    let matches = App::new("agave-watchtower")
+        .about("Sanity checks Solana cluster nodes")
         .version(solana_version::version!())
         .after_help("ADDITIONAL HELP:
         To receive a Slack, Discord, PagerDuty and/or Telegram notification on sanity failure,
@@ -67,7 +80,7 @@ fn get_config() -> Config {
         export TWILIO_CONFIG='ACCOUNT=<account>,TOKEN=<securityToken>,TO=<receivingNumber>,FROM=<sendingNumber>'")
         .arg({
             let arg = Arg::with_name("config_file")
-                .short("C")
+                .short('C')
                 .long("config")
                 .value_name("PATH")
                 .takes_value(true)
@@ -84,7 +97,7 @@ fn get_config() -> Config {
                 .long("url")
                 .value_name("URL")
                 .takes_value(true)
-                .validator(is_url)
+                .validator(validator_is_url)
                 .help("JSON RPC URL for the cluster (conflicts with --urls)"),
         )
         .arg(
@@ -92,7 +105,7 @@ fn get_config() -> Config {
                 .long("urls")
                 .value_name("URL")
                 .takes_value(true)
-                .validator(is_url)
+                .validator(validator_is_url)
                 .multiple(true)
                 .number_of_values(3)
                 .conflicts_with("json_rpc_url")
@@ -127,7 +140,7 @@ fn get_config() -> Config {
                 .long("validator-identity")
                 .value_name("VALIDATOR IDENTITY PUBKEY")
                 .takes_value(true)
-                .validator(is_pubkey_or_keypair)
+                .validator(validator_is_pubkey_or_keypair)
                 .multiple(true)
                 .help("Validator identities to monitor for delinquency")
         )
@@ -137,7 +150,7 @@ fn get_config() -> Config {
                 .value_name("SOL")
                 .takes_value(true)
                 .default_value("10")
-                .validator(is_parsable::<f64>)
+                .validator(|s| is_parsable::<f64>(s.to_string()))
                 .help("Alert when the validator identity balance is less than this amount of SOL")
         )
         .arg(
@@ -157,7 +170,7 @@ fn get_config() -> Config {
                 .long("active-stake-alert-threshold")
                 .value_name("PERCENTAGE")
                 .takes_value(true)
-                .validator(is_valid_percentage)
+                .validator(validator_is_valid_percentage)
                 .default_value("80")
                 .help("Alert when the current stake for the cluster drops below this value"),
         )
@@ -184,7 +197,7 @@ fn get_config() -> Config {
                 .value_name("RANGE")
                 .takes_value(true)
                 .default_value("50")
-                .validator(is_parsable::<u64>)
+                .validator(|s| is_parsable::<u64>(s.to_string()))
                 .help("Acceptable range of slots for endpoints, checked at watchtower startup")
         )
         .get_matches();

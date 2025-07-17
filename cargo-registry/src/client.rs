@@ -1,5 +1,5 @@
 use {
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg, ArgMatches},
+    clap::{crate_description, crate_name, Command as App, Arg, ArgMatches, ArgAction},
     solana_clap_utils::{
         hidden_unless_forced,
         input_validators::is_url_or_moniker,
@@ -37,12 +37,12 @@ impl Client {
     }
 
     fn get_keypair(
-        matches: &ArgMatches<'_>,
+        matches: &ArgMatches,
         config_path: &str,
         name: &str,
     ) -> Result<Keypair, Box<dyn error::Error>> {
         let (_, default_signer_path) = ConfigInput::compute_keypair_path_setting(
-            matches.value_of(name).unwrap_or(""),
+            matches.get_one::<String>(name).map(|s| s.as_str()).unwrap_or(""),
             config_path,
         );
 
@@ -51,162 +51,155 @@ impl Client {
         read_keypair_file(default_signer.path)
     }
 
-    fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> App<'ab, 'v> {
-        App::new(name)
-            .about(about)
-            .version(version)
+    pub(crate) fn new() -> Result<Client, Box<dyn error::Error>> {
+        let matches = App::new(crate_name!())
+            .about(crate_description!())
+            .version("3.0.0")
             .arg(
-                Arg::with_name("skip_preflight")
+                Arg::new("skip_preflight")
                     .long("skip-preflight")
                     .global(true)
-                    .takes_value(false)
+                    .action(ArgAction::SetTrue)
                     .help("Skip the preflight check when sending transactions"),
             )
             .arg(
-                Arg::with_name("config_file")
-                    .short("C")
+                Arg::new("config_file")
+                    .short('C')
                     .long("config")
                     .value_name("FILEPATH")
-                    .takes_value(true)
+                    
                     .global(true)
                     .help("Configuration file to use"),
             )
             .arg(
-                Arg::with_name("json_rpc_url")
-                    .short("u")
+                Arg::new("json_rpc_url")
+                    .short('u')
                     .long("url")
                     .value_name("URL_OR_MONIKER")
-                    .takes_value(true)
+                    
                     .global(true)
-                    .validator(is_url_or_moniker)
+                    .value_parser(|s: &str| {
+                        is_url_or_moniker(s.to_string()).map(|_| s.to_string())
+                    })
                     .help(
                         "URL for Solana's JSON RPC or moniker (or their first letter): \
                        [mainnet-beta, testnet, devnet, localhost]",
                     ),
             )
             .arg(
-                Arg::with_name("keypair")
-                    .short("k")
+                Arg::new("keypair")
+                    .short('k')
                     .long("keypair")
                     .value_name("KEYPAIR")
                     .global(true)
-                    .takes_value(true)
+                    
                     .help("Filepath or URL to a keypair"),
             )
             .arg(
-                Arg::with_name("authority")
-                    .short("a")
+                Arg::new("authority")
+                    .short('a')
                     .long("authority")
                     .value_name("KEYPAIR")
                     .global(true)
-                    .takes_value(true)
-                    .help("Filepath or URL to program authority keypair"),
+                    
+                    .help("Authority's keypair used to manage the registry"),
             )
             .arg(
-                Arg::with_name("port")
-                    .short("p")
+                Arg::new("port")
+                    .short('p')
                     .long("port")
                     .value_name("PORT")
+                    .default_value("3030")
                     .global(true)
-                    .takes_value(true)
+                    
                     .help("Cargo registry's local TCP port. The server will bind to this port and wait for requests."),
             )
             .arg(
-                Arg::with_name("server_url")
-                    .short("s")
+                Arg::new("server_url")
+                    .short('s')
                     .long("server-url")
                     .value_name("URL_OR_MONIKER")
-                    .takes_value(true)
+                    
                     .global(true)
-                    .validator(is_url_or_moniker)
+                    .value_parser(|s: &str| {
+                        is_url_or_moniker(s.to_string()).map(|_| s.to_string())
+                    })
                     .help(
                         "URL where the registry service will be hosted. Default: http://0.0.0.0:<port>",
                     ),
             )
             .arg(
-                Arg::with_name("commitment")
+                Arg::new("commitment")
                     .long("commitment")
-                    .takes_value(true)
-                    .possible_values(&[
-                        "processed",
-                        "confirmed",
-                        "finalized",
-                    ])
+                    
+                    .value_parser(["processed", "confirmed", "finalized"])
                     .value_name("COMMITMENT_LEVEL")
                     .hide_possible_values(true)
                     .global(true)
                     .help("Return information at the selected commitment level [possible values: processed, confirmed, finalized]"),
             )
             .arg(
-                Arg::with_name("rpc_timeout")
+                Arg::new("rpc_timeout")
                     .long("rpc-timeout")
                     .value_name("SECONDS")
-                    .takes_value(true)
+                    
                     .default_value(DEFAULT_RPC_TIMEOUT_SECONDS)
                     .global(true)
-                    .hidden(hidden_unless_forced())
+                    .hide(hidden_unless_forced())
                     .help("Timeout value for RPC requests"),
             )
             .arg(
-                Arg::with_name("confirm_transaction_initial_timeout")
+                Arg::new("confirm_transaction_initial_timeout")
                     .long("confirm-timeout")
                     .value_name("SECONDS")
-                    .takes_value(true)
+                    
                     .default_value(DEFAULT_CONFIRM_TX_TIMEOUT_SECONDS)
                     .global(true)
-                    .hidden(hidden_unless_forced())
+                    .hide(hidden_unless_forced())
                     .help("Timeout value for initial transaction status"),
             )
-    }
+            .get_matches();
 
-    pub(crate) fn new() -> Result<Client, Box<dyn error::Error>> {
-        let matches = Self::get_clap_app(
-            crate_name!(),
-            crate_description!(),
-            solana_version::version!(),
-        )
-        .get_matches();
-
-        let cli_config = if let Some(config_file) = matches.value_of("config_file") {
+        let cli_config = if let Some(config_file) = matches.get_one::<String>("config_file") {
             Config::load(config_file).unwrap_or_default()
         } else {
             Config::default()
         };
 
         let (_, json_rpc_url) = ConfigInput::compute_json_rpc_url_setting(
-            matches.value_of("json_rpc_url").unwrap_or(""),
+            matches.get_one::<String>("json_rpc_url").map(|s| s.as_str()).unwrap_or(""),
             &cli_config.json_rpc_url,
         );
 
         let (_, websocket_url) = ConfigInput::compute_websocket_url_setting(
-            matches.value_of("websocket_url").unwrap_or(""),
+            matches.get_one::<String>("websocket_url").map(|s| s.as_str()).unwrap_or(""),
             &cli_config.websocket_url,
-            matches.value_of("json_rpc_url").unwrap_or(""),
+            matches.get_one::<String>("json_rpc_url").map(|s| s.as_str()).unwrap_or(""),
             &cli_config.json_rpc_url,
         );
 
         let (_, commitment) = ConfigInput::compute_commitment_config(
-            matches.value_of("commitment").unwrap_or(""),
+            matches.get_one::<String>("commitment").map(|s| s.as_str()).unwrap_or(""),
             &cli_config.commitment,
         );
 
-        let rpc_timeout = value_t_or_exit!(matches, "rpc_timeout", u64);
+        let rpc_timeout = *matches.get_one::<u64>("rpc_timeout").unwrap();
         let rpc_timeout = Duration::from_secs(rpc_timeout);
 
         let confirm_transaction_initial_timeout =
-            value_t_or_exit!(matches, "confirm_transaction_initial_timeout", u64);
+            *matches.get_one::<u64>("confirm_transaction_initial_timeout").unwrap();
         let confirm_transaction_initial_timeout =
             Duration::from_secs(confirm_transaction_initial_timeout);
 
         let payer_keypair = Self::get_keypair(&matches, &cli_config.keypair_path, "keypair")?;
         let authority_keypair = Self::get_keypair(&matches, &cli_config.keypair_path, "authority")?;
 
-        let port = value_t_or_exit!(matches, "port", u16);
+        let port = *matches.get_one::<u16>("port").unwrap();
 
         let server_url =
-            value_t!(matches, "server_url", String).unwrap_or(format!("http://0.0.0.0:{port}"));
+            matches.get_one::<String>("server_url").cloned().unwrap_or(format!("http://0.0.0.0:{port}"));
 
-        let skip_preflight = matches.is_present("skip_preflight");
+        let skip_preflight = matches.get_flag("skip_preflight");
 
         Ok(Client {
             rpc_client: Arc::new(RpcClient::new_with_timeouts_and_commitment(

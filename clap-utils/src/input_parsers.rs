@@ -21,7 +21,7 @@ use {
 pub const STDOUT_OUTFILE_TOKEN: &str = "-";
 
 // Return parsed values from matches at `name`
-pub fn values_of<T>(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<T>>
+pub fn values_of<T>(matches: &ArgMatches, name: &str) -> Option<Vec<T>>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
@@ -32,7 +32,7 @@ where
 }
 
 // Return a parsed value from matches at `name`
-pub fn value_of<T>(matches: &ArgMatches<'_>, name: &str) -> Option<T>
+pub fn value_of<T>(matches: &ArgMatches, name: &str) -> Option<T>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
@@ -45,7 +45,7 @@ where
 }
 
 pub fn unix_timestamp_from_rfc3339_datetime(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     name: &str,
 ) -> Option<UnixTimestamp> {
     matches.value_of(name).and_then(|value| {
@@ -56,7 +56,7 @@ pub fn unix_timestamp_from_rfc3339_datetime(
 }
 
 // Return the keypair for an argument with filename `name` or None if not present.
-pub fn keypair_of(matches: &ArgMatches<'_>, name: &str) -> Option<Keypair> {
+pub fn keypair_of(matches: &ArgMatches, name: &str) -> Option<Keypair> {
     if let Some(value) = matches.value_of(name) {
         if value == ASK_KEYWORD {
             let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
@@ -69,7 +69,7 @@ pub fn keypair_of(matches: &ArgMatches<'_>, name: &str) -> Option<Keypair> {
     }
 }
 
-pub fn keypairs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Keypair>> {
+pub fn keypairs_of(matches: &ArgMatches, name: &str) -> Option<Vec<Keypair>> {
     matches.values_of(name).map(|values| {
         values
             .filter_map(|value| {
@@ -86,11 +86,11 @@ pub fn keypairs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Keypair>>
 
 // Return a pubkey for an argument that can itself be parsed into a pubkey,
 // or is a filename that can be read as a keypair
-pub fn pubkey_of(matches: &ArgMatches<'_>, name: &str) -> Option<Pubkey> {
+pub fn pubkey_of(matches: &ArgMatches, name: &str) -> Option<Pubkey> {
     value_of(matches, name).or_else(|| keypair_of(matches, name).map(|keypair| keypair.pubkey()))
 }
 
-pub fn pubkeys_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Pubkey>> {
+pub fn pubkeys_of(matches: &ArgMatches, name: &str) -> Option<Vec<Pubkey>> {
     matches.values_of(name).map(|values| {
         values
             .map(|value| {
@@ -105,7 +105,7 @@ pub fn pubkeys_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Pubkey>> {
 }
 
 // Return pubkey/signature pairs for a string of the form pubkey=signature
-pub fn pubkeys_sigs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<(Pubkey, Signature)>> {
+pub fn pubkeys_sigs_of(matches: &ArgMatches, name: &str) -> Option<Vec<(Pubkey, Signature)>> {
     matches.values_of(name).map(|values| {
         values
             .map(|pubkey_signer_string| {
@@ -121,7 +121,7 @@ pub fn pubkeys_sigs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<(Pubk
 // Return a signer from matches at `name`
 #[allow(clippy::type_complexity)]
 pub fn signer_of(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<(Option<Box<dyn Signer>>, Option<Pubkey>), Box<dyn std::error::Error>> {
@@ -135,7 +135,7 @@ pub fn signer_of(
 }
 
 pub fn pubkey_of_signer(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<Pubkey>, Box<dyn std::error::Error>> {
@@ -152,7 +152,7 @@ pub fn pubkey_of_signer(
 }
 
 pub fn pubkeys_of_multiple_signers(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<Vec<Pubkey>>, Box<dyn std::error::Error>> {
@@ -168,7 +168,7 @@ pub fn pubkeys_of_multiple_signers(
 }
 
 pub fn resolve_signer(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
@@ -184,7 +184,7 @@ pub fn resolve_signer(
 ///
 /// Accepts plain or decimal strings ("50", "0.03", ".5", "1.").
 /// Any decimal places beyond 9 are truncated.
-pub fn lamports_of_sol(matches: &ArgMatches<'_>, name: &str) -> Option<u64> {
+pub fn lamports_of_sol(matches: &ArgMatches, name: &str) -> Option<u64> {
     matches.value_of(name).and_then(|value| {
         if value == "." {
             None
@@ -209,11 +209,11 @@ pub fn lamports_of_sol(matches: &ArgMatches<'_>, name: &str) -> Option<u64> {
     })
 }
 
-pub fn cluster_type_of(matches: &ArgMatches<'_>, name: &str) -> Option<ClusterType> {
+pub fn cluster_type_of(matches: &ArgMatches, name: &str) -> Option<ClusterType> {
     value_of(matches, name)
 }
 
-pub fn commitment_of(matches: &ArgMatches<'_>, name: &str) -> Option<CommitmentConfig> {
+pub fn commitment_of(matches: &ArgMatches, name: &str) -> Option<CommitmentConfig> {
     matches
         .value_of(name)
         .map(|value| CommitmentConfig::from_str(value).unwrap_or_default())
@@ -387,7 +387,7 @@ mod tests {
     #[ignore = "historical reference; shows float behavior fixed in pull #4988"]
     fn test_lamports_of_sol_origin() {
         use solana_native_token::sol_to_lamports;
-        pub fn lamports_of_sol(matches: &ArgMatches<'_>, name: &str) -> Option<u64> {
+        pub fn lamports_of_sol(matches: &ArgMatches, name: &str) -> Option<u64> {
             value_of(matches, name).map(sol_to_lamports)
         }
 
@@ -426,31 +426,44 @@ mod tests {
         assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "0.03"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", ".03"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "1."]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(1_000_000_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", ".0"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(0));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "."]);
         assert_eq!(lamports_of_sol(&matches, "single"), None);
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         // EQ
         let matches = app().get_matches_from(vec!["test", "--single", "1.000000015"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(1_000_000_015));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "0.0157"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(15_700_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "0.5025"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(502_500_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         // Truncation of extra decimal places
         let matches = app().get_matches_from(vec!["test", "--single", "0.1234567891"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(123_456_789));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "0.1234567899"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(123_456_789));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "1.000.4567899"]);
         assert_eq!(lamports_of_sol(&matches, "single"), None);
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "6,998"]);
         assert_eq!(lamports_of_sol(&matches, "single"), None);
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "6,998.00"]);
         assert_eq!(lamports_of_sol(&matches, "single"), None);
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
     }
 }
