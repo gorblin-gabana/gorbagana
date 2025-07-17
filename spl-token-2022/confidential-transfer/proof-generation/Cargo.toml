@@ -8,7 +8,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
-curve25519-dalek = "4.2.0"
+curve25519-dalek = {workspace=true}
 solana-zk-sdk = "2.0.0"
 thiserror = "1.0.65"
 
