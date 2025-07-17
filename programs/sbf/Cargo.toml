@@ -211,3 +211,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 # and the overrides in sync.
 solana-program = { path = "../../sdk/program" }
 solana-zk-token-sdk = { path = "../../zk-token-sdk" }
+spl-token = { path = "../../spl-token" }
+spl-token-2022 = { path = "../../spl-token-2022" }
+spl-associated-token-account = { path = "../../associated-token-account/program" }
+spl-token-group-interface = { path = "../../token-group/interface" }
+spl-token-metadata-interface = { path = "../../token-metadata/interface" }

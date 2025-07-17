@@ -20,13 +20,17 @@ use {
 pub fn spl_token_ids() -> Vec<Pubkey> {
     vec![
         Pubkey::from(spl_token::id().to_bytes()),
-        Pubkey::from(spl_token_2022::id().to_bytes())
+        Pubkey::from(spl_token_2022::id().to_bytes()),
+        // Custom token program IDs
+        "Gorbj8Dp27NkXMQUkeHBSmpf6iQ3yT4b2uVe8kM4s6br".parse().unwrap(), // Custom SPL Token
+        "G22oYgZ6LnVcy7v8eSNi2xpNk1NcZiPD8CVKSTut7oZ6".parse().unwrap(), // Custom SPL Token 2022
+        "GoATGVNeSXerFerPqTJ8hcED1msPWHHLxao2vwBYqowm".parse().unwrap(), // Custom ATA program
     ]
 }
 
 // Check if the provided program id as a known SPL Token program id
 pub fn is_known_spl_token_id(program_id: &Pubkey) -> bool {
-    *program_id == Pubkey::from(spl_token::id().to_bytes()) || *program_id == Pubkey::from(spl_token_2022::id().to_bytes())
+    spl_token_ids().contains(program_id)
 }
 
 // A helper function to convert spl_token::native_mint::id() as spl_sdk::pubkey::Pubkey to
