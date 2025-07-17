@@ -11,12 +11,10 @@ pub const FEE_PAYER_ARG: ArgConstant<'static> = ArgConstant {
            is also passed. Defaults to the client keypair.",
 };
 
-#[allow(deprecated)]
-pub fn fee_payer_arg<'a>() -> Arg<'a> {
+pub fn fee_payer_arg() -> Arg {
     Arg::new(FEE_PAYER_ARG.name)
         .long(FEE_PAYER_ARG.long)
-        .takes_value(true)
         .value_name("KEYPAIR")
-        .validator(|s| input_validators::is_valid_signer(s))
+        .value_parser(|s: &str| input_validators::is_valid_signer(s).map(|_| s.to_string()))
         .help(FEE_PAYER_ARG.help)
 }

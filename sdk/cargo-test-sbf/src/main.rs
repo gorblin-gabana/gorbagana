@@ -267,36 +267,31 @@ fn main() {
             Arg::new("sbf_sdk")
                 .long("sbf-sdk")
                 .value_name("PATH")
-                .takes_value(true)
                 .help("Path to the Solana SBF SDK"),
         )
         .arg(
             Arg::new("features")
                 .long("features")
                 .value_name("FEATURES")
-                .takes_value(true)
-                .multiple_occurrences(true)
-                .multiple_values(true)
+                .action(clap::ArgAction::Append)
                 .help("Space-separated list of features to activate"),
         )
         .arg(
             Arg::new("no_default_features")
                 .long("no-default-features")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Do not activate the `default` feature"),
         )
         .arg(
             Arg::new("test")
                 .long("test")
                 .value_name("NAME")
-                .takes_value(true)
                 .help("Test only the specified test target"),
         )
         .arg(
             Arg::new("manifest_path")
                 .long("manifest-path")
                 .value_name("PATH")
-                .takes_value(true)
                 .help("Path to Cargo.toml"),
         )
         .arg(
@@ -304,47 +299,44 @@ fn main() {
                 .long("package")
                 .short('p')
                 .value_name("SPEC")
-                .takes_value(true)
-                .multiple_occurrences(true)
-                .multiple_values(true)
+                .action(clap::ArgAction::Append)
                 .help("Package to run tests for"),
         )
         .arg(
             Arg::new("sbf_out_dir")
                 .long("sbf-out-dir")
                 .value_name("DIRECTORY")
-                .takes_value(true)
                 .help("Place final SBF build artifacts in this directory"),
         )
         .arg(
             Arg::new("no_run")
                 .long("no-run")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Compile, but don't run tests"),
         )
         .arg(
             Arg::new("offline")
                 .long("offline")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Run without accessing the network"),
         )
         .arg(
             Arg::new("generate_child_script_on_failure")
                 .long("generate-child-script-on-failure")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Generate a shell script to rerun a failed subcommand"),
         )
         .arg(
             Arg::new("verbose")
                 .short('v')
                 .long("verbose")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Use verbose output"),
         )
         .arg(
             Arg::new("workspace")
                 .long("workspace")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .alias("all")
                 .help("Test all Solana packages in the workspace"),
         )
@@ -352,15 +344,13 @@ fn main() {
             Arg::new("jobs")
                 .short('j')
                 .long("jobs")
-                .takes_value(true)
                 .value_name("N")
-                .validator(|val| val.parse::<usize>().map_err(|e| e.to_string()))
                 .help("Number of parallel jobs, defaults to # of CPUs"),
         )
         .arg(
             Arg::new("arch")
                 .long("arch")
-                .possible_values(["sbfv1", "sbfv2"])
+                .value_parser(["sbfv1", "sbfv2"])
                 .default_value("sbfv1")
                 .help("Build for the given target architecture"),
         )
@@ -368,30 +358,35 @@ fn main() {
             Arg::new("extra_cargo_test_args")
                 .value_name("extra args for cargo test and the test binary")
                 .index(1)
-                .multiple_occurrences(true)
-                .multiple_values(true)
+                .action(clap::ArgAction::Append)
                 .help("All extra arguments are passed through to cargo test"),
         )
         .get_matches_from(args);
 
     let mut config = Config {
-        sbf_sdk: matches.value_of_t("sbf_sdk").ok(),
-        sbf_out_dir: matches.value_of_t("sbf_out_dir").ok(),
+        sbf_sdk: matches.get_one::<String>("sbf_sdk").cloned(),
+        sbf_out_dir: matches.get_one::<String>("sbf_out_dir").cloned(),
         extra_cargo_test_args: matches
-            .values_of_t("extra_cargo_test_args")
-            .ok()
+            .get_many::<String>("extra_cargo_test_args")
+            .map(|values| values.cloned().collect())
             .unwrap_or_default(),
-        features: matches.values_of_t("features").ok().unwrap_or_default(),
-        packages: matches.values_of_t("packages").ok().unwrap_or_default(),
-        generate_child_script_on_failure: matches.is_present("generate_child_script_on_failure"),
-        test_name: matches.value_of_t("test").ok(),
-        no_default_features: matches.is_present("no_default_features"),
-        no_run: matches.is_present("no_run"),
-        offline: matches.is_present("offline"),
-        verbose: matches.is_present("verbose"),
-        workspace: matches.is_present("workspace"),
-        jobs: matches.value_of_t("jobs").ok(),
-        arch: matches.value_of("arch").unwrap(),
+        features: matches
+            .get_many::<String>("features")
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default(),
+        packages: matches
+            .get_many::<String>("packages")
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default(),
+        generate_child_script_on_failure: matches.get_flag("generate_child_script_on_failure"),
+        test_name: matches.get_one::<String>("test").cloned(),
+        no_default_features: matches.get_flag("no_default_features"),
+        no_run: matches.get_flag("no_run"),
+        offline: matches.get_flag("offline"),
+        verbose: matches.get_flag("verbose"),
+        workspace: matches.get_flag("workspace"),
+        jobs: matches.get_one::<String>("jobs").cloned(),
+        arch: matches.get_one::<String>("arch").unwrap(),
         ..Config::default()
     };
 
@@ -417,6 +412,6 @@ fn main() {
         config.extra_cargo_test_args.insert(0, em_dash);
     }
 
-    let manifest_path: Option<PathBuf> = matches.value_of_t("manifest_path").ok();
+    let manifest_path: Option<PathBuf> = matches.get_one::<String>("manifest_path").map(PathBuf::from);
     test_solana(config, manifest_path);
 }

@@ -33,18 +33,18 @@ where
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
     matches
-        .values_of(name)
+        .get_many::<String>(name)
         .map(|xs| xs.map(|x| x.parse::<T>().unwrap()).collect())
 }
 
 // Return a parsed value from matches at `name`
 pub fn value_of<T>(matches: &ArgMatches, name: &str) -> Option<T>
 where
-    T: std::str::FromStr,
+    T: std::str::FromStr, 
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
     matches
-        .value_of(name)
+        .get_one::<String>(name)
         .and_then(|value| value.parse::<T>().ok())
 }
 
@@ -52,7 +52,7 @@ pub fn unix_timestamp_from_rfc3339_datetime(
     matches: &ArgMatches,
     name: &str,
 ) -> Option<UnixTimestamp> {
-    matches.value_of(name).and_then(|value| {
+    matches.get_one::<String>(name).and_then(|value| {
         DateTime::parse_from_rfc3339(value)
             .ok()
             .map(|date_time| date_time.timestamp())
@@ -73,7 +73,7 @@ pub fn cluster_type_of(matches: &ArgMatches, name: &str) -> Option<ClusterType> 
 
 pub fn commitment_of(matches: &ArgMatches, name: &str) -> Option<CommitmentConfig> {
     matches
-        .value_of(name)
+        .get_one::<String>(name)
         .map(|value| CommitmentConfig::from_str(value).unwrap_or_default())
 }
 
@@ -247,9 +247,9 @@ pub fn parse_derived_address_seed(arg: &str) -> Result<String, String> {
 
 // Return the keypair for an argument with filename `name` or None if not present.
 pub fn keypair_of(matches: &ArgMatches, name: &str) -> Option<Keypair> {
-    if let Some(value) = matches.value_of(name) {
+    if let Some(value) = matches.get_one::<String>(name) {
         if value == ASK_KEYWORD {
-            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             keypair_from_seed_phrase(name, skip_validation, true, None, true).ok()
         } else {
             read_keypair_file(value).ok()
@@ -260,11 +260,11 @@ pub fn keypair_of(matches: &ArgMatches, name: &str) -> Option<Keypair> {
 }
 
 pub fn keypairs_of(matches: &ArgMatches, name: &str) -> Option<Vec<Keypair>> {
-    matches.values_of(name).map(|values| {
+    matches.get_many::<String>(name).map(|values| {
         values
             .filter_map(|value| {
                 if value == ASK_KEYWORD {
-                    let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+                    let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
                     keypair_from_seed_phrase(name, skip_validation, true, None, true).ok()
                 } else {
                     read_keypair_file(value).ok()
@@ -281,7 +281,7 @@ pub fn pubkey_of(matches: &ArgMatches, name: &str) -> Option<Pubkey> {
 }
 
 pub fn pubkeys_of(matches: &ArgMatches, name: &str) -> Option<Vec<Pubkey>> {
-    matches.values_of(name).map(|values| {
+    matches.get_many::<String>(name).map(|values| {
         values
             .map(|value| {
                 value.parse::<Pubkey>().unwrap_or_else(|_| {

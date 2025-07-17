@@ -268,7 +268,7 @@ pub fn try_pubkeys_of(
 
 // Return pubkey/signature pairs for a string of the form pubkey=signature
 pub fn pubkeys_sigs_of(matches: &ArgMatches, name: &str) -> Option<Vec<(Pubkey, Signature)>> {
-    matches.values_of(name).map(|values| {
+    matches.get_many::<String>(name).map(|values| {
         values
             .map(|pubkey_signer_string| {
                 let mut signer = pubkey_signer_string.split('=');

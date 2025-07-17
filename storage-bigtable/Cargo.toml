@@ -33,7 +33,7 @@ solana-storage-proto = { workspace = true }
 solana-transaction-status = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tonic = { workspace = true, features = ["tls", "transport"] }
+tonic = { workspace = true, features = ["tls-native-roots", "transport"] }
 zstd = { workspace = true }
 
 # openssl is a dependency of the goauth and smpl_jwt crates, but explicitly

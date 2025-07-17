@@ -9,7 +9,7 @@ repository = "https://github.com/solana-labs/solana-program-library"
 version = "0.2.0"
 
 [dependencies]
-clap = { version = "3", features = ["cargo"] }
+clap = { workspace = true, features = ["cargo"] }
 futures-util = "0.3.31"
 solana-clap-v3-utils = "2.2.1"
 solana-cli-config = "2.2.1"
@@ -21,7 +21,7 @@ spl-tlv-account-resolution = { version = "0.8.1", path = "../../libraries/tlv-ac
 spl-transfer-hook-interface = { version = "0.8.2", path = "../interface" }
 strum = "0.26"
 strum_macros = "0.26"
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 serde_yaml = "0.9.34"

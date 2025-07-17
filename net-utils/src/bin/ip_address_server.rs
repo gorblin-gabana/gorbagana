@@ -6,7 +6,7 @@ use {
 fn main() {
     solana_logger::setup();
     let matches = Command::new("solana-ip-address-server")
-        .version(solana_version::version!())
+        .version(clap::crate_version!())
         .arg(
             Arg::new("port")
                 .index(1)
@@ -15,7 +15,7 @@ fn main() {
         )
         .get_matches();
 
-    let port = matches.value_of("port").unwrap();
+    let port = matches.get_one::<String>("port").unwrap();
     let port = port
         .parse()
         .unwrap_or_else(|_| panic!("Unable to parse {port}"));

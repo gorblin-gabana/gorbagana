@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 fn main() {
     solana_logger::setup();
     let matches = Command::new("solana-ip-address")
-        .version(solana_version::version!())
+        .version(clap::crate_version!())
         .arg(
             Arg::new("host_port")
                 .index(1)
@@ -12,7 +12,7 @@ fn main() {
         )
         .get_matches();
 
-    let host_port = matches.value_of("host_port").unwrap();
+    let host_port = matches.get_one::<String>("host_port").unwrap();
     let addr = solana_net_utils::parse_host_port(host_port)
         .unwrap_or_else(|_| panic!("failed to parse {host_port}"));
 

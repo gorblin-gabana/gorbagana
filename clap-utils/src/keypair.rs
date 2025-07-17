@@ -241,7 +241,7 @@ impl DefaultSigner {
     pub fn generate_unique_signers(
         &self,
         bulk_signers: Vec<Option<Box<dyn Signer>>>,
-        matches: &ArgMatches<'_>,
+        matches: &ArgMatches,
         wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     ) -> Result<CliSignerInfo, Box<dyn error::Error>> {
         let mut unique_signers = vec![];
@@ -764,7 +764,7 @@ pub fn signer_from_path_with_config(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             Ok(Box::new(keypair_from_seed_phrase(
                 keypair_name,
                 skip_validation,
@@ -794,7 +794,7 @@ pub fn signer_from_path_with_config(
                     locator,
                     derivation_path.unwrap_or_default(),
                     wallet_manager,
-                    matches.is_present("confirm_key"),
+                    matches.get_flag("confirm_key"),
                     keypair_name,
                 )?))
             } else {
@@ -807,7 +807,7 @@ pub fn signer_from_path_with_config(
                 .and_then(|presigners| presigner_from_pubkey_sigs(&pubkey, presigners));
             if let Some(presigner) = presigner {
                 Ok(Box::new(presigner))
-            } else if config.allow_null_signer || matches.is_present(SIGN_ONLY_ARG.name) {
+            } else if config.allow_null_signer || matches.get_flag(SIGN_ONLY_ARG.name) {
                 Ok(Box::new(NullSigner::new(&pubkey)))
             } else {
                 Err(std::io::Error::new(
@@ -883,7 +883,7 @@ pub fn resolve_signer_from_path(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             // This method validates the seed phrase, but returns `None` because there is no path
             // on disk or to a device
             keypair_from_seed_phrase(
@@ -921,7 +921,7 @@ pub fn resolve_signer_from_path(
                     locator,
                     derivation_path.unwrap_or_default(),
                     wallet_manager,
-                    matches.is_present("confirm_key"),
+                    matches.get_flag("confirm_key"),
                     keypair_name,
                 )
                 .map(|keypair| keypair.path)?;
@@ -1008,7 +1008,7 @@ pub fn keypair_from_path(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             Ok(keypair_from_seed_phrase(
                 keypair_name,
                 skip_validation,

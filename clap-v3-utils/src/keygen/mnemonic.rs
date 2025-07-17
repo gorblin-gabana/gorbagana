@@ -25,20 +25,19 @@ pub const NO_PASSPHRASE_ARG: ArgConstant<'static> = ArgConstant {
     help: "Do not prompt for a BIP39 passphrase",
 };
 
-pub fn word_count_arg<'a>() -> Arg<'a> {
+pub fn word_count_arg() -> Arg {
     Arg::new(WORD_COUNT_ARG.name)
         .long(WORD_COUNT_ARG.long)
-        .possible_values(["12", "15", "18", "21", "24"])
+        .value_parser(["12", "15", "18", "21", "24"])
         .default_value("12")
         .value_name("NUMBER")
-        .takes_value(true)
         .help(WORD_COUNT_ARG.help)
 }
 
-pub fn language_arg<'a>() -> Arg<'a> {
+pub fn language_arg() -> Arg {
     Arg::new(LANGUAGE_ARG.name)
         .long(LANGUAGE_ARG.long)
-        .possible_values([
+        .value_parser([
             "english",
             "chinese-simplified",
             "chinese-traditional",
@@ -50,11 +49,10 @@ pub fn language_arg<'a>() -> Arg<'a> {
         ])
         .default_value("english")
         .value_name("LANGUAGE")
-        .takes_value(true)
         .help(LANGUAGE_ARG.help)
 }
 
-pub fn no_passphrase_arg<'a>() -> Arg<'a> {
+pub fn no_passphrase_arg() -> Arg {
     Arg::new(NO_PASSPHRASE_ARG.name)
         .long(NO_PASSPHRASE_ARG.long)
         .alias("no-passphrase")
