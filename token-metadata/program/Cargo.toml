@@ -1,0 +1,34 @@
+[package]
+name = "spl-token-metadata-example"
+version = "0.3.0"
+description = "Solana Program Library Token Metadata Example Program"
+documentation = "https://docs.rs/spl-token-metadata-example"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[features]
+no-entrypoint = []
+test-sbf = []
+
+[dependencies]
+solana-program = "2.3.0"
+spl-token-2022 = { version = "9.0.0", features = ["no-entrypoint"] }
+spl-token-metadata-interface = { version = "0.7.0", path = "../interface" }
+spl-type-length-value = "0.8.0"
+spl-pod = "0.5.0"
+
+[dev-dependencies]
+solana-program-test = "2.3.4"
+solana-sdk = "2.2.1"
+solana-system-interface = "1"
+spl-token-client = "0.16.1"
+test-case = "3.3"
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]

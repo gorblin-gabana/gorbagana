@@ -1,7 +1,4 @@
-use {
-    crate::blockstore::*,
-    solana_sdk::{clock::Slot, hash::Hash},
-};
+use {crate::blockstore::*, solana_clock::Slot, solana_hash::Hash};
 
 pub struct AncestorIterator<'a> {
     current: Option<Slot>,
@@ -30,12 +27,12 @@ impl<'a> AncestorIterator<'a> {
         }
     }
 }
-impl<'a> Iterator for AncestorIterator<'a> {
+impl Iterator for AncestorIterator<'_> {
     type Item = Slot;
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.current;
-        current.map(|slot| {
+        current.inspect(|&slot| {
             if slot != 0 {
                 self.current = self
                     .blockstore
@@ -45,7 +42,6 @@ impl<'a> Iterator for AncestorIterator<'a> {
             } else {
                 self.current = None;
             }
-            slot
         })
     }
 }
@@ -58,7 +54,7 @@ impl<'a> From<AncestorIterator<'a>> for AncestorIteratorWithHash<'a> {
         Self { ancestor_iterator }
     }
 }
-impl<'a> Iterator for AncestorIteratorWithHash<'a> {
+impl Iterator for AncestorIteratorWithHash<'_> {
     type Item = (Slot, Hash);
     fn next(&mut self) -> Option<Self::Item> {
         self.ancestor_iterator
@@ -76,7 +72,7 @@ impl<'a> Iterator for AncestorIteratorWithHash<'a> {
 mod tests {
     use {
         super::*,
-        solana_sdk::hash::Hash,
+        solana_hash::Hash,
         std::{collections::HashMap, path::Path},
         trees::tr,
     };

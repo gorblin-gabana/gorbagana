@@ -7,45 +7,38 @@
     allow(dead_code, unused_imports)
 )]
 
-use {
-    solana_rbpf::memory_region::MemoryState,
-    solana_sdk::{feature_set::bpf_account_data_direct_mapping, signer::keypair::Keypair},
-    std::slice,
-};
+use {solana_keypair::Keypair, std::slice};
 
 extern crate test;
 
 use {
     byteorder::{ByteOrder, LittleEndian, WriteBytesExt},
-    solana_bpf_loader_program::{
-        create_vm, serialization::serialize_parameters,
-        syscalls::create_program_runtime_environment_v1,
-    },
+    solana_account::AccountSharedData,
+    solana_bpf_loader_program::{create_vm, syscalls::create_program_runtime_environment_v1},
+    solana_client_traits::SyncClient,
+    solana_instruction::{AccountMeta, Instruction},
     solana_measure::measure::Measure,
-    solana_program_runtime::{compute_budget::ComputeBudget, invoke_context::InvokeContext},
-    solana_rbpf::{
-        ebpf::MM_INPUT_START, elf::Executable, memory_region::MemoryRegion,
-        verifier::RequisiteVerifier, vm::ContextObject,
+    solana_message::Message,
+    solana_program_entrypoint::SUCCESS,
+    solana_program_runtime::{
+        execution_budget::SVMTransactionExecutionBudget, invoke_context::InvokeContext,
+        serialization::serialize_parameters,
     },
+    solana_pubkey::Pubkey,
     solana_runtime::{
         bank::Bank,
         bank_client::BankClient,
         genesis_utils::{create_genesis_config, GenesisConfigInfo},
-        loader_utils::{load_program_from_file, load_upgradeable_program_and_advance_slot},
+        loader_utils::{load_program_from_file, load_program_of_loader_v4},
     },
-    solana_sdk::{
-        account::AccountSharedData,
-        bpf_loader,
-        client::SyncClient,
-        entrypoint::SUCCESS,
-        feature_set::FeatureSet,
-        instruction::{AccountMeta, Instruction},
-        message::Message,
-        native_loader,
-        pubkey::Pubkey,
-        signature::Signer,
-        transaction_context::InstructionAccount,
+    solana_sbpf::{
+        ebpf::MM_INPUT_START, elf::Executable, memory_region::MemoryRegion,
+        verifier::RequisiteVerifier, vm::ContextObject,
     },
+    solana_sdk_ids::{bpf_loader, native_loader},
+    solana_signer::Signer,
+    solana_svm_feature_set::SVMFeatureSet,
+    solana_transaction_context::InstructionAccount,
     std::{mem, sync::Arc},
     test::Bencher,
 };
@@ -67,13 +60,7 @@ macro_rules! with_mock_invoke_context {
                 AccountSharedData::new(2, $account_size, &program_key),
             ),
         ];
-        let instruction_accounts = vec![InstructionAccount {
-            index_in_transaction: 2,
-            index_in_caller: 2,
-            index_in_callee: 0,
-            is_signer: false,
-            is_writable: true,
-        }];
+        let instruction_accounts = vec![InstructionAccount::new(2, 2, 0, false, true)];
         solana_program_runtime::with_mock_invoke_context!(
             $invoke_context,
             transaction_context,
@@ -93,8 +80,8 @@ fn bench_program_create_executable(bencher: &mut Bencher) {
     let elf = load_program_from_file("bench_alu");
 
     let program_runtime_environment = create_program_runtime_environment_v1(
-        &FeatureSet::default(),
-        &ComputeBudget::default(),
+        &SVMFeatureSet::default(),
+        &SVMTransactionExecutionBudget::default(),
         true,
         false,
     );
@@ -119,8 +106,8 @@ fn bench_program_alu(bencher: &mut Bencher) {
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
 
     let program_runtime_environment = create_program_runtime_environment_v1(
-        &invoke_context.feature_set,
-        &ComputeBudget::default(),
+        invoke_context.get_feature_set(),
+        &SVMTransactionExecutionBudget::default(),
         true,
         false,
     );
@@ -138,11 +125,11 @@ fn bench_program_alu(bencher: &mut Bencher) {
         vec![],
         &mut invoke_context,
     );
-    let mut vm = vm.unwrap();
+    let (mut vm, _, _) = vm.unwrap();
 
     println!("Interpreted:");
     vm.context_object_pointer
-        .mock_set_remaining(std::i64::MAX as u64);
+        .mock_set_remaining(i64::MAX as u64);
     let (instructions, result) = vm.execute_program(&executable, true);
     assert_eq!(SUCCESS, result.unwrap());
     assert_eq!(ARMSTRONG_LIMIT, LittleEndian::read_u64(&inner_iter));
@@ -153,7 +140,7 @@ fn bench_program_alu(bencher: &mut Bencher) {
 
     bencher.iter(|| {
         vm.context_object_pointer
-            .mock_set_remaining(std::i64::MAX as u64);
+            .mock_set_remaining(i64::MAX as u64);
         vm.execute_program(&executable, true).1.unwrap();
     });
     let summary = bencher.bench(|_bencher| Ok(())).unwrap().unwrap();
@@ -174,7 +161,7 @@ fn bench_program_alu(bencher: &mut Bencher) {
 
     bencher.iter(|| {
         vm.context_object_pointer
-            .mock_set_remaining(std::i64::MAX as u64);
+            .mock_set_remaining(i64::MAX as u64);
         vm.execute_program(&executable, false).1.unwrap();
     });
     let summary = bencher.bench(|_bencher| Ok(())).unwrap().unwrap();
@@ -201,9 +188,9 @@ fn bench_program_execute_noop(bencher: &mut Bencher) {
     let authority_keypair = Keypair::new();
     let mint_pubkey = mint_keypair.pubkey();
 
-    let (_, invoke_program_id) = load_upgradeable_program_and_advance_slot(
+    let (_bank, invoke_program_id) = load_program_of_loader_v4(
         &mut bank_client,
-        bank_forks.as_ref(),
+        &bank_forks,
         &mint_keypair,
         &authority_keypair,
         "noop",
@@ -235,11 +222,11 @@ fn bench_create_vm(bencher: &mut Bencher) {
     invoke_context.mock_set_remaining(BUDGET);
 
     let direct_mapping = invoke_context
-        .feature_set
-        .is_active(&bpf_account_data_direct_mapping::id());
+        .get_feature_set()
+        .bpf_account_data_direct_mapping;
     let program_runtime_environment = create_program_runtime_environment_v1(
-        &invoke_context.feature_set,
-        &ComputeBudget::default(),
+        invoke_context.get_feature_set(),
+        &SVMTransactionExecutionBudget::default(),
         true,
         false,
     );
@@ -256,7 +243,8 @@ fn bench_create_vm(bencher: &mut Bencher) {
             .transaction_context
             .get_current_instruction_context()
             .unwrap(),
-        !direct_mapping, // copy_account_data,
+        !direct_mapping, // copy_account_data
+        true,            // mask_out_rent_epoch_in_vm_serialization
     )
     .unwrap();
 
@@ -280,8 +268,8 @@ fn bench_instruction_count_tuner(_bencher: &mut Bencher) {
     invoke_context.mock_set_remaining(BUDGET);
 
     let direct_mapping = invoke_context
-        .feature_set
-        .is_active(&bpf_account_data_direct_mapping::id());
+        .get_feature_set()
+        .bpf_account_data_direct_mapping;
 
     // Serialize account data
     let (_serialized, regions, account_lengths) = serialize_parameters(
@@ -291,12 +279,13 @@ fn bench_instruction_count_tuner(_bencher: &mut Bencher) {
             .get_current_instruction_context()
             .unwrap(),
         !direct_mapping, // copy_account_data
+        true,            // mask_out_rent_epoch_in_vm_serialization
     )
     .unwrap();
 
     let program_runtime_environment = create_program_runtime_environment_v1(
-        &invoke_context.feature_set,
-        &ComputeBudget::default(),
+        invoke_context.get_feature_set(),
+        &SVMTransactionExecutionBudget::default(),
         true,
         false,
     );
@@ -313,7 +302,7 @@ fn bench_instruction_count_tuner(_bencher: &mut Bencher) {
         account_lengths,
         &mut invoke_context,
     );
-    let mut vm = vm.unwrap();
+    let (mut vm, _, _) = vm.unwrap();
 
     let mut measure = Measure::start("tune");
     let (instructions, _result) = vm.execute_program(&executable, true);
@@ -336,23 +325,21 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
     unsafe {
         regions
             .iter()
-            .map(|region| match region.state.get() {
-                MemoryState::Readable => MemoryRegion::new_readonly(
-                    slice::from_raw_parts(region.host_addr.get() as *const _, region.len as usize),
-                    region.vm_addr,
-                ),
-                MemoryState::Writable => MemoryRegion::new_writable(
-                    slice::from_raw_parts_mut(
-                        region.host_addr.get() as *mut _,
-                        region.len as usize,
-                    ),
-                    region.vm_addr,
-                ),
-                MemoryState::Cow(id) => MemoryRegion::new_cow(
-                    slice::from_raw_parts(region.host_addr.get() as *const _, region.len as usize),
-                    region.vm_addr,
-                    id,
-                ),
+            .map(|region| {
+                let mut new_region = if region.writable {
+                    MemoryRegion::new_writable(
+                        slice::from_raw_parts_mut(region.host_addr as *mut _, region.len as usize),
+                        region.vm_addr,
+                    )
+                } else {
+                    MemoryRegion::new_readonly(
+                        slice::from_raw_parts(region.host_addr as *const _, region.len as usize),
+                        region.vm_addr,
+                    )
+                };
+                new_region.access_violation_handler_payload =
+                    region.access_violation_handler_payload;
+                new_region
             })
             .collect()
     }

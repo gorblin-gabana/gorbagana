@@ -21,13 +21,15 @@ use {
     },
 };
 
+const MAX_FEE_BASIS_POINTS_SUB_ONE: u64 = 9_999;
 const MAX_FEE_BASIS_POINTS: u64 = 10_000;
 const REMAINING_BALANCE_BIT_LENGTH: u8 = 64;
 const TRANSFER_AMOUNT_LO_BIT_LENGTH: u8 = 16;
 const TRANSFER_AMOUNT_HI_BIT_LENGTH: u8 = 32;
-const DELTA_BIT_LENGTH: u8 = 48;
+const DELTA_BIT_LENGTH: u8 = 16;
 const FEE_AMOUNT_LO_BIT_LENGTH: u8 = 16;
 const FEE_AMOUNT_HI_BIT_LENGTH: u8 = 32;
+const NET_TRANSFER_AMOUNT_BIT_LENGTH: u8 = 64;
 
 /// The transfer public keys associated with a transfer with fee.
 pub struct TransferWithFeePubkeys {
@@ -46,10 +48,10 @@ pub struct TransferWithFeePubkeys {
 pub struct TransferWithFeeProofContext {
     /// Group encryption of the low 16 bits of the transfer amount
     pub ciphertext_lo: PodTransferAmountCiphertext,
-    /// Group encryption of the high 48 bits of the transfer amount
+    /// Group encryption of the high 32 bits of the transfer amount
     pub ciphertext_hi: PodTransferAmountCiphertext,
-    /// The public encryption keys associated with the transfer: source, dest,
-    /// auditor, and withdraw withheld authority
+    /// The public encryption keys associated with the transfer: source,
+    /// destination, auditor, and withdraw withheld authority
     pub transfer_with_fee_pubkeys: TransferWithFeePubkeys,
     /// The final spendable ciphertext after the transfer,
     pub new_source_ciphertext: PodElGamalCiphertext,
@@ -156,15 +158,26 @@ impl TransferWithFeeProofContext {
         let fee_commitment_lo = fee_ciphertext_lo.extract_commitment();
         let fee_commitment_hi = fee_ciphertext_hi.extract_commitment();
 
-        let max_fee_basis_points_scalar = u64_to_scalar(MAX_FEE_BASIS_POINTS);
-        let max_fee_basis_points_commitment =
-            ristretto::multiply_ristretto(&max_fee_basis_points_scalar, &G)
+        let max_fee_basis_points_sub_one_scalar = u64_to_scalar(MAX_FEE_BASIS_POINTS_SUB_ONE);
+        let max_fee_basis_points_sub_one_commitment =
+            ristretto::multiply_ristretto(&max_fee_basis_points_sub_one_scalar, &G)
                 .ok_or(TokenProofExtractionError::CurveArithmetic)?;
         let claimed_complement_commitment = ristretto::subtract_ristretto(
-            &max_fee_basis_points_commitment,
+            &max_fee_basis_points_sub_one_commitment,
             &commitment_to_ristretto(claimed_commitment),
         )
         .ok_or(TokenProofExtractionError::CurveArithmetic)?;
+
+        let transfer_amount_point = combine_lo_hi_pedersen_points(
+            &commitment_to_ristretto(&transfer_amount_commitment_lo),
+            &commitment_to_ristretto(&transfer_amount_commitment_hi),
+        )
+        .ok_or(TokenProofExtractionError::CurveArithmetic)?;
+        let fee_commitment_point = commitment_to_ristretto(fee_commitment);
+
+        let net_transfer_commitment_point =
+            ristretto::subtract_ristretto(&transfer_amount_point, &fee_commitment_point)
+                .ok_or(TokenProofExtractionError::CurveArithmetic)?;
 
         let expected_commitments = [
             bytes_of(new_source_commitment),
@@ -174,8 +187,12 @@ impl TransferWithFeeProofContext {
             bytes_of(&claimed_complement_commitment),
             bytes_of(&fee_commitment_lo),
             bytes_of(&fee_commitment_hi),
+            bytes_of(&net_transfer_commitment_point),
         ];
 
+        // range proof context always contains 8 commitments and therefore,
+        // this check will verify equality of all expected commitments
+        // (`zip` will not be short-circuited)
         if !range_proof_commitments
             .iter()
             .zip(expected_commitments.into_iter())
@@ -195,9 +212,13 @@ impl TransferWithFeeProofContext {
             DELTA_BIT_LENGTH,
             FEE_AMOUNT_LO_BIT_LENGTH,
             FEE_AMOUNT_HI_BIT_LENGTH,
+            NET_TRANSFER_AMOUNT_BIT_LENGTH,
         ]
         .iter();
 
+        // range proof context always contains 8 bit lengths and therefore,
+        // this check will verify equality of all expected bit lengths
+        // (`zip` will not be short-circuited)
         if !range_proof_bit_lengths
             .iter()
             .zip(expected_bit_lengths)
@@ -250,20 +271,20 @@ impl TransferWithFeeProofContext {
     }
 }
 
-/// Ristretto generator point for curve25519
+/// Ristretto generator point for curve-25519
 const G: PodRistrettoPoint = PodRistrettoPoint([
     226, 242, 174, 10, 106, 188, 78, 113, 168, 132, 169, 97, 197, 0, 81, 95, 88, 227, 11, 106, 165,
     130, 221, 141, 182, 166, 89, 69, 224, 141, 45, 118,
 ]);
 
-/// Convert a `u64` amount into a curve25519 scalar
+/// Convert a `u64` amount into a curve-25519 scalar
 fn u64_to_scalar(amount: u64) -> PodScalar {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&amount.to_le_bytes());
     PodScalar(bytes)
 }
 
-/// Convert a `u16` amount into a curve25519 scalar
+/// Convert a `u16` amount into a curve-25519 scalar
 fn u16_to_scalar(amount: u16) -> PodScalar {
     let mut bytes = [0u8; 32];
     bytes[..2].copy_from_slice(&amount.to_le_bytes());

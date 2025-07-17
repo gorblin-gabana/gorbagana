@@ -18,19 +18,23 @@ pub const NONCE_AUTHORITY_ARG: ArgConstant<'static> = ArgConstant {
     help: "Provide the nonce authority keypair to use when signing a nonced transaction",
 };
 
-fn nonce_arg() -> Arg {
+#[allow(deprecated)]
+fn nonce_arg<'a>() -> Arg<'a> {
     Arg::new(NONCE_ARG.name)
         .long(NONCE_ARG.long)
+        .takes_value(true)
         .value_name("PUBKEY")
-        .value_parser(|s: &str| is_valid_pubkey(s).map(|_| s.to_string()))
+        .validator(|s| is_valid_pubkey(s))
         .help(NONCE_ARG.help)
 }
 
-pub fn nonce_authority_arg() -> Arg {
+#[allow(deprecated)]
+pub fn nonce_authority_arg<'a>() -> Arg<'a> {
     Arg::new(NONCE_AUTHORITY_ARG.name)
         .long(NONCE_AUTHORITY_ARG.long)
+        .takes_value(true)
         .value_name("KEYPAIR")
-        .value_parser(|s: &str| is_valid_signer(s).map(|_| s.to_string()))
+        .validator(|s| is_valid_signer(s))
         .help(NONCE_AUTHORITY_ARG.help)
 }
 
@@ -38,7 +42,7 @@ pub trait NonceArgs {
     fn nonce_args(self, global: bool) -> Self;
 }
 
-impl NonceArgs for Command {
+impl NonceArgs for Command<'_> {
     fn nonce_args(self, global: bool) -> Self {
         self.arg(nonce_arg().global(global)).arg(
             nonce_authority_arg()

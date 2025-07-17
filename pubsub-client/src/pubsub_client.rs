@@ -32,7 +32,7 @@
 //! By default the [`block_subscribe`] and [`vote_subscribe`] events are
 //! disabled on RPC nodes. They can be enabled by passing
 //! `--rpc-pubsub-enable-block-subscription` and
-//! `--rpc-pubsub-enable-vote-subscription` to `solana-validator`. When these
+//! `--rpc-pubsub-enable-vote-subscription` to `agave-validator`. When these
 //! methods are disabled, the RPC server will return a "Method not found" error
 //! message.
 //!
@@ -46,10 +46,10 @@
 //!
 //! ```
 //! use anyhow::Result;
-//! use solana_sdk::commitment_config::CommitmentConfig;
+//! use solana_commitment_config::CommitmentConfig;
+//! use solana_pubkey::Pubkey;
 //! use solana_pubsub_client::pubsub_client::PubsubClient;
-//! use solana_rpc_client_api::config::RpcAccountInfoConfig;
-//! use solana_sdk::pubkey::Pubkey;
+//! use solana_rpc_client_types::config::RpcAccountInfoConfig;
 //! use std::thread;
 //!
 //! fn get_account_updates(account_pubkey: Pubkey) -> Result<()> {
@@ -82,7 +82,7 @@
 //!     Ok(())
 //! }
 //! #
-//! # get_account_updates(solana_sdk::pubkey::new_rand());
+//! # get_account_updates(solana_pubkey::new_rand());
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
@@ -96,20 +96,21 @@ use {
         value::Value::{Number, Object},
         Map, Value,
     },
-    solana_account_decoder::UiAccount,
-    solana_rpc_client_api::{
+    solana_account_decoder_client_types::UiAccount,
+    solana_clock::Slot,
+    solana_pubkey::Pubkey,
+    solana_rpc_client_types::{
         config::{
             RpcAccountInfoConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter,
             RpcProgramAccountsConfig, RpcSignatureSubscribeConfig, RpcTransactionLogsConfig,
             RpcTransactionLogsFilter,
         },
-        filter,
         response::{
             Response as RpcResponse, RpcBlockUpdate, RpcKeyedAccount, RpcLogsResponse,
             RpcSignatureResult, RpcVote, SlotInfo, SlotUpdate,
         },
     },
-    solana_sdk::{clock::Slot, pubkey::Pubkey, signature::Signature},
+    solana_signature::Signature,
     std::{
         marker::PhantomData,
         net::TcpStream,
@@ -164,13 +165,17 @@ where
         writable_socket: &Arc<RwLock<WebSocket<MaybeTlsStream<TcpStream>>>>,
         body: String,
     ) -> Result<u64, PubsubClientError> {
-        writable_socket.write().unwrap().send(Message::Text(body))?;
-        let message = writable_socket.write().unwrap().read()?;
+        writable_socket
+            .write()
+            .unwrap()
+            .send(Message::Text(body))
+            .map_err(Box::new)?;
+        let message = writable_socket.write().unwrap().read().map_err(Box::new)?;
         Self::extract_subscription_id(message)
     }
 
     fn extract_subscription_id(message: Message) -> Result<u64, PubsubClientError> {
-        let message_text = &message.into_text()?;
+        let message_text = &message.into_text().map_err(Box::new)?;
 
         if let Ok(json_msg) = serde_json::from_str::<Map<String, Value>>(message_text) {
             if let Some(Number(x)) = json_msg.get("result") {
@@ -204,46 +209,18 @@ where
                 })
                 .to_string(),
             ))
+            .map_err(Box::new)
             .map_err(|err| err.into())
-    }
-
-    fn get_version(
-        writable_socket: &Arc<RwLock<WebSocket<MaybeTlsStream<TcpStream>>>>,
-    ) -> Result<semver::Version, PubsubClientError> {
-        writable_socket.write().unwrap().send(Message::Text(
-            json!({
-                "jsonrpc":"2.0","id":1,"method":"getVersion",
-            })
-            .to_string(),
-        ))?;
-        let message = writable_socket.write().unwrap().read()?;
-        let message_text = &message.into_text()?;
-
-        if let Ok(json_msg) = serde_json::from_str::<Map<String, Value>>(message_text) {
-            if let Some(Object(version_map)) = json_msg.get("result") {
-                if let Some(node_version) = version_map.get("solana-core") {
-                    if let Some(node_version) = node_version.as_str() {
-                        if let Ok(parsed) = semver::Version::parse(node_version) {
-                            return Ok(parsed);
-                        }
-                    }
-                }
-            }
-        }
-
-        Err(PubsubClientError::UnexpectedGetVersionResponse(format!(
-            "msg={message_text}"
-        )))
     }
 
     fn read_message(
         writable_socket: &Arc<RwLock<WebSocket<MaybeTlsStream<TcpStream>>>>,
     ) -> Result<Option<T>, PubsubClientError> {
-        let message = writable_socket.write().unwrap().read()?;
+        let message = writable_socket.write().unwrap().read().map_err(Box::new)?;
         if message.is_ping() {
             return Ok(None);
         }
-        let message_text = &message.into_text()?;
+        let message_text = &message.into_text().map_err(Box::new)?;
         if let Ok(json_msg) = serde_json::from_str::<Map<String, Value>>(message_text) {
             if let Some(Object(params)) = json_msg.get("params") {
                 if let Some(result) = params.get("result") {
@@ -328,15 +305,14 @@ pub struct PubsubClient {}
 
 fn connect_with_retry(
     url: Url,
-) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, tungstenite::Error> {
+) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, Box<tungstenite::Error>> {
     let mut connection_retries = 5;
     loop {
         let result = connect(url.clone()).map(|(socket, _)| socket);
         if let Err(tungstenite::Error::Http(response)) = &result {
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && connection_retries > 0
-            {
+            if response.status() == http::StatusCode::TOO_MANY_REQUESTS && connection_retries > 0 {
                 let mut duration = Duration::from_millis(500);
-                if let Some(retry_after) = response.headers().get(reqwest::header::RETRY_AFTER) {
+                if let Some(retry_after) = response.headers().get(http::header::RETRY_AFTER) {
                     if let Ok(retry_after) = retry_after.to_str() {
                         if let Ok(retry_after) = retry_after.parse::<u64>() {
                             if retry_after < 120 {
@@ -356,7 +332,7 @@ fn connect_with_retry(
                 continue;
             }
         }
-        return result;
+        return result.map_err(Box::new);
     }
 }
 
@@ -416,7 +392,7 @@ impl PubsubClient {
     /// Receives messages of type [`RpcBlockUpdate`] when a block is confirmed or finalized.
     ///
     /// This method is disabled by default. It can be enabled by passing
-    /// `--rpc-pubsub-enable-block-subscription` to `solana-validator`.
+    /// `--rpc-pubsub-enable-block-subscription` to `agave-validator`.
     ///
     /// # RPC Reference
     ///
@@ -523,7 +499,7 @@ impl PubsubClient {
     pub fn program_subscribe(
         url: &str,
         pubkey: &Pubkey,
-        mut config: Option<RpcProgramAccountsConfig>,
+        config: Option<RpcProgramAccountsConfig>,
     ) -> Result<ProgramSubscription, PubsubClientError> {
         let url = Url::parse(url)?;
         let socket = connect_with_retry(url)?;
@@ -533,16 +509,6 @@ impl PubsubClient {
         let socket_clone = socket.clone();
         let exit = Arc::new(AtomicBool::new(false));
         let exit_clone = exit.clone();
-
-        if let Some(ref mut config) = config {
-            if let Some(ref mut filters) = config.filters {
-                let node_version = PubsubProgramClientSubscription::get_version(&socket_clone).ok();
-                // If node does not support the pubsub `getVersion` method, assume version is old
-                // and filters should be mapped (node_version.is_none()).
-                filter::maybe_map_filters(node_version, filters)
-                    .map_err(PubsubClientError::RequestError)?;
-            }
-        }
 
         let body = json!({
             "jsonrpc":"2.0",
@@ -578,7 +544,7 @@ impl PubsubClient {
     /// votes are observed prior to confirmation and may never be confirmed.
     ///
     /// This method is disabled by default. It can be enabled by passing
-    /// `--rpc-pubsub-enable-vote-subscription` to `solana-validator`.
+    /// `--rpc-pubsub-enable-vote-subscription` to `agave-validator`.
     ///
     /// # RPC Reference
     ///

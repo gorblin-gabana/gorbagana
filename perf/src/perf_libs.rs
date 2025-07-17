@@ -85,12 +85,12 @@ static API: OnceLock<Container<Api>> = OnceLock::new();
 
 fn init(name: &OsStr) {
     info!("Loading {:?}", name);
-    unsafe {
-        API.set(Container::load(name).unwrap_or_else(|err| {
+    API.get_or_init(|| {
+        unsafe { Container::load(name) }.unwrap_or_else(|err| {
             error!("Unable to load {:?}: {}", name, err);
             std::process::exit(1);
-        })).ok();
-    }
+        })
+    });
 }
 
 pub fn locate_perf_libs() -> Option<PathBuf> {
@@ -177,7 +177,7 @@ pub fn api() -> Option<&'static Container<Api<'static>>> {
             if std::env::var("TEST_PERF_LIBS_CUDA").is_ok() {
                 init_cuda();
             }
-        })
+        });
     }
 
     API.get()

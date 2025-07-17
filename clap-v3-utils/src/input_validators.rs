@@ -4,12 +4,11 @@ use {
         keypair::ASK_KEYWORD,
     },
     chrono::DateTime,
-    solana_sdk::{
-        clock::{Epoch, Slot},
-        hash::Hash,
-        pubkey::{Pubkey, MAX_SEED_LEN},
-        signature::{read_keypair_file, Signature},
-    },
+    solana_clock::{Epoch, Slot},
+    solana_hash::Hash,
+    solana_keypair::read_keypair_file,
+    solana_pubkey::{Pubkey, MAX_SEED_LEN},
+    solana_signature::Signature,
     std::{fmt::Display, ops::RangeBounds, str::FromStr},
 };
 
@@ -150,7 +149,7 @@ where
 // produce a pubkey()
 #[deprecated(
     since = "1.18.0",
-    note = "please use `SignerSourceParserBuilder::default().allow_pubkey().allow_file_path().build()` instead"
+    note = "please use `SignerSourceParserBuilder::default().allow_all().build()` instead"
 )]
 #[allow(deprecated)]
 pub fn is_valid_pubkey<T>(string: T) -> Result<(), String>
@@ -176,7 +175,7 @@ where
 // also provided and correct happens in parsing, not in validation.
 #[deprecated(
     since = "1.18.0",
-    note = "please use `SignerSourceParserBuilder::default().build()` instead"
+    note = "please use `SignerSourceParserBuilder::default().allow_all().build()` instead"
 )]
 #[allow(deprecated)]
 pub fn is_valid_signer<T>(string: T) -> Result<(), String>

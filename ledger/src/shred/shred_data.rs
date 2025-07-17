@@ -3,11 +3,14 @@ use {
         self,
         common::dispatch,
         legacy, merkle,
+        payload::Payload,
         traits::{Shred as _, ShredData as ShredDataTrait},
         DataShredHeader, Error, ShredCommonHeader, ShredFlags, ShredType, ShredVariant, SignedData,
         MAX_DATA_SHREDS_PER_SLOT,
     },
-    solana_sdk::{clock::Slot, hash::Hash, signature::Signature},
+    solana_clock::Slot,
+    solana_hash::Hash,
+    solana_signature::Signature,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,24 +23,25 @@ impl ShredData {
     dispatch!(fn data_header(&self) -> &DataShredHeader);
 
     dispatch!(pub(super) fn common_header(&self) -> &ShredCommonHeader);
-    dispatch!(pub(super) fn data(&self) -> Result<&[u8], Error>);
-    dispatch!(pub(super) fn erasure_shard(self) -> Result<Vec<u8>, Error>);
-    dispatch!(pub(super) fn erasure_shard_as_slice(&self) -> Result<&[u8], Error>);
+    dispatch!(pub(super) fn erasure_shard(&self) -> Result<&[u8], Error>);
     dispatch!(pub(super) fn erasure_shard_index(&self) -> Result<usize, Error>);
-    dispatch!(pub(super) fn into_payload(self) -> Vec<u8>);
+    dispatch!(pub(super) fn into_payload(self) -> Payload);
     dispatch!(pub(super) fn parent(&self) -> Result<Slot, Error>);
-    dispatch!(pub(super) fn payload(&self) -> &Vec<u8>);
+    dispatch!(pub(super) fn payload(&self) -> &Payload);
     dispatch!(pub(super) fn sanitize(&self) -> Result<(), Error>);
     dispatch!(pub(super) fn set_signature(&mut self, signature: Signature));
-
-    // Only for tests.
-    dispatch!(pub(super) fn set_index(&mut self, index: u32));
-    dispatch!(pub(super) fn set_slot(&mut self, slot: Slot));
 
     pub(super) fn signed_data(&self) -> Result<SignedData, Error> {
         match self {
             Self::Legacy(shred) => Ok(SignedData::Chunk(shred.signed_data()?)),
             Self::Merkle(shred) => Ok(SignedData::MerkleRoot(shred.signed_data()?)),
+        }
+    }
+
+    pub(super) fn chained_merkle_root(&self) -> Result<Hash, Error> {
+        match self {
+            Self::Legacy(_) => Err(Error::InvalidShredType),
+            Self::Merkle(shred) => shred.chained_merkle_root(),
         }
     }
 
@@ -136,6 +140,13 @@ impl ShredData {
             Self::Merkle(_) => panic!("Not Implemented!"),
         }
     }
+
+    pub(super) fn retransmitter_signature(&self) -> Result<Signature, Error> {
+        match self {
+            Self::Legacy(_) => Err(Error::InvalidShredVariant),
+            Self::Merkle(shred) => shred.retransmitter_signature(),
+        }
+    }
 }
 
 impl From<legacy::ShredData> for ShredData {
@@ -178,6 +189,6 @@ pub(super) fn sanitize<T: ShredDataTrait>(shred: &T) -> Result<(), Error> {
     let _data = shred.data()?;
     let _parent = shred.parent()?;
     let _shard_index = shred.erasure_shard_index()?;
-    let _erasure_shard = shred.erasure_shard_as_slice()?;
+    let _erasure_shard = shred.erasure_shard()?;
     Ok(())
 }

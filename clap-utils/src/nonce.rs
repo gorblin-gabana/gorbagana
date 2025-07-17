@@ -1,6 +1,6 @@
 use {
     crate::{input_validators::*, offline::BLOCKHASH_ARG, ArgConstant},
-    clap::{Command, Arg},
+    clap::{App, Arg},
 };
 
 pub const NONCE_ARG: ArgConstant<'static> = ArgConstant {
@@ -18,20 +18,22 @@ pub const NONCE_AUTHORITY_ARG: ArgConstant<'static> = ArgConstant {
     help: "Provide the nonce authority keypair to use when signing a nonced transaction",
 };
 
-fn nonce_arg() -> Arg {
-    Arg::new(NONCE_ARG.name)
+fn nonce_arg<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(NONCE_ARG.name)
         .long(NONCE_ARG.long)
+        .takes_value(true)
         .value_name("PUBKEY")
         .requires(BLOCKHASH_ARG.name)
-        .value_parser(|s: &str| is_valid_pubkey(s).map(|_| s.to_string()))
+        .validator(is_valid_pubkey)
         .help(NONCE_ARG.help)
 }
 
-pub fn nonce_authority_arg() -> Arg {
-    Arg::new(NONCE_AUTHORITY_ARG.name)
+pub fn nonce_authority_arg<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(NONCE_AUTHORITY_ARG.name)
         .long(NONCE_AUTHORITY_ARG.long)
+        .takes_value(true)
         .value_name("KEYPAIR")
-        .value_parser(|s: &str| is_valid_signer(s).map(|_| s.to_string()))
+        .validator(is_valid_signer)
         .help(NONCE_AUTHORITY_ARG.help)
 }
 
@@ -39,7 +41,7 @@ pub trait NonceArgs {
     fn nonce_args(self, global: bool) -> Self;
 }
 
-impl NonceArgs for Command {
+impl NonceArgs for App<'_, '_> {
     fn nonce_args(self, global: bool) -> Self {
         self.arg(nonce_arg().global(global)).arg(
             nonce_authority_arg()

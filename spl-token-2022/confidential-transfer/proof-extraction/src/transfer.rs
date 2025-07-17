@@ -21,9 +21,9 @@ pub struct TransferPubkeys {
 
 /// The proof context information needed to process a [Transfer] instruction.
 pub struct TransferProofContext {
-    /// Ciphertext containing the low 16 bits of the transafer amount
+    /// Ciphertext containing the low 16 bits of the transfer amount
     pub ciphertext_lo: PodTransferAmountCiphertext,
-    /// Ciphertext containing the high 32 bits of the transafer amount
+    /// Ciphertext containing the high 32 bits of the transfer amount
     pub ciphertext_hi: PodTransferAmountCiphertext,
     /// The transfer public keys associated with a transfer
     pub transfer_pubkeys: TransferPubkeys,
@@ -90,6 +90,9 @@ impl TransferProofContext {
             transfer_amount_commitment_hi,
         ];
 
+        // range proof context always contains 8 commitments and therefore,
+        // this check will verify equality of all expected commitments
+        // (`zip` will not be short-circuited)
         if !range_proof_commitments
             .iter()
             .zip(expected_commitments.iter())
@@ -111,6 +114,9 @@ impl TransferProofContext {
         ]
         .iter();
 
+        // range proof context always contains 8 bit lengths and therefore,
+        // this check will verify equality of all expected bit lengths
+        // (`zip` will not be short-circuited)
         if !range_proof_bit_lengths
             .iter()
             .zip(expected_bit_lengths)

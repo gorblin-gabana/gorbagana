@@ -40,10 +40,6 @@ _ $cargoNightly build --release
 # Remove "BENCH_FILE", if it exists so that the following commands can append
 rm -f "$BENCH_FILE"
 
-# Run sdk benches
-_ $cargoNightly bench --manifest-path sdk/Cargo.toml ${V:+--verbose} \
-  -- -Z unstable-options --format=json | tee -a "$BENCH_FILE"
-
 # Run runtime benches
 _ $cargoNightly bench --manifest-path runtime/Cargo.toml ${V:+--verbose} \
   -- -Z unstable-options --format=json | tee -a "$BENCH_FILE"
@@ -61,6 +57,7 @@ _ $cargoNightly bench --manifest-path core/Cargo.toml ${V:+--verbose} \
   -- -Z unstable-options --format=json | tee -a "$BENCH_FILE"
 
 # Run sbf benches
+_ make -C programs/sbf all
 _ $cargoNightly bench --manifest-path programs/sbf/Cargo.toml ${V:+--verbose} --features=sbf_c \
   -- -Z unstable-options --format=json --nocapture | tee -a "$BENCH_FILE"
 

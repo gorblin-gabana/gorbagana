@@ -2,16 +2,11 @@ use {
     crate::parse_instruction::{
         check_num_accounts, ParsableProgram, ParseInstructionError, ParsedInstructionEnum,
     },
+    borsh::BorshDeserialize,
     serde_json::json,
-    solana_sdk::{instruction::CompiledInstruction, message::AccountKeys, pubkey::Pubkey},
+    solana_message::{compiled_instruction::CompiledInstruction, AccountKeys},
     spl_associated_token_account::instruction::AssociatedTokenAccountInstruction,
 };
-
-// A helper function to convert spl_associated_token_account::id() as spl_sdk::pubkey::Pubkey
-// to solana_sdk::pubkey::Pubkey
-pub fn spl_associated_token_id() -> Pubkey {
-    Pubkey::new_from_array(spl_associated_token_account::id().to_bytes())
-}
 
 pub fn parse_associated_token(
     instruction: &CompiledInstruction,
@@ -29,13 +24,8 @@ pub fn parse_associated_token(
     let ata_instruction = if instruction.data.is_empty() {
         AssociatedTokenAccountInstruction::Create
     } else {
-        // Parse instruction type from the first byte
-        match instruction.data.first() {
-            Some(0) => AssociatedTokenAccountInstruction::Create,
-            Some(1) => AssociatedTokenAccountInstruction::CreateIdempotent,
-            Some(2) => AssociatedTokenAccountInstruction::RecoverNested,
-            _ => return Err(ParseInstructionError::InstructionNotParsable(ParsableProgram::SplAssociatedTokenAccount)),
-        }
+        AssociatedTokenAccountInstruction::try_from_slice(&instruction.data)
+            .map_err(|_| ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken))?
     };
 
     match ata_instruction {
@@ -98,7 +88,9 @@ mod test {
     use spl_associated_token_account::create_associated_token_account as create_associated_token_account_deprecated;
     use {
         super::*,
-        solana_sdk::{message::Message, sysvar},
+        solana_message::Message,
+        solana_pubkey::Pubkey,
+        solana_sdk_ids::sysvar,
         spl_associated_token_account::{
             get_associated_token_address, get_associated_token_address_with_program_id,
             instruction::{
@@ -125,7 +117,7 @@ mod test {
                 "account": associated_account_address.to_string(),
                 "wallet": wallet_address.to_string(),
                 "mint": mint.to_string(),
-                "systemProgram": solana_sdk::system_program::id().to_string(),
+                "systemProgram": solana_sdk_ids::system_program::id().to_string(),
                 "tokenProgram": spl_token::id().to_string(),
             }),
         };
@@ -188,7 +180,7 @@ mod test {
                     "account": associated_account_address.to_string(),
                     "wallet": wallet_address.to_string(),
                     "mint": mint.to_string(),
-                    "systemProgram": solana_sdk::system_program::id().to_string(),
+                    "systemProgram": solana_sdk_ids::system_program::id().to_string(),
                     "tokenProgram": token_program_id.to_string(),
                 })
             }
@@ -230,7 +222,7 @@ mod test {
                     "account": associated_account_address.to_string(),
                     "wallet": wallet_address.to_string(),
                     "mint": mint.to_string(),
-                    "systemProgram": solana_sdk::system_program::id().to_string(),
+                    "systemProgram": solana_sdk_ids::system_program::id().to_string(),
                     "tokenProgram": token_program_id.to_string(),
                 })
             }

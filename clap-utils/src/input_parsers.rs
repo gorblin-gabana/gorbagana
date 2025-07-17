@@ -5,39 +5,39 @@ use {
     },
     chrono::DateTime,
     clap::ArgMatches,
+    solana_clock::UnixTimestamp,
+    solana_cluster_type::ClusterType,
+    solana_commitment_config::CommitmentConfig,
+    solana_keypair::{read_keypair_file, Keypair},
+    solana_native_token::LAMPORTS_PER_SOL,
+    solana_pubkey::Pubkey,
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
-    solana_sdk::{
-        clock::UnixTimestamp,
-        commitment_config::CommitmentConfig,
-        genesis_config::ClusterType,
-        native_token::sol_to_lamports,
-        pubkey::Pubkey,
-        signature::{read_keypair_file, Keypair, Signature, Signer},
-    },
-    std::{rc::Rc, str::FromStr},
+    solana_signature::Signature,
+    solana_signer::Signer,
+    std::{io, num::ParseIntError, rc::Rc, str::FromStr},
 };
 
 // Sentinel value used to indicate to write to screen instead of file
 pub const STDOUT_OUTFILE_TOKEN: &str = "-";
 
 // Return parsed values from matches at `name`
-pub fn values_of<T>(matches: &ArgMatches, name: &str) -> Option<Vec<T>>
+pub fn values_of<T>(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<T>>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
     matches
-        .get_many::<String>(name)
+        .values_of(name)
         .map(|xs| xs.map(|x| x.parse::<T>().unwrap()).collect())
 }
 
 // Return a parsed value from matches at `name`
-pub fn value_of<T>(matches: &ArgMatches, name: &str) -> Option<T>
+pub fn value_of<T>(matches: &ArgMatches<'_>, name: &str) -> Option<T>
 where
     T: std::str::FromStr,
     <T as std::str::FromStr>::Err: std::fmt::Debug,
 {
-    if let Some(value) = matches.get_one::<String>(name) {
+    if let Some(value) = matches.value_of(name) {
         value.parse::<T>().ok()
     } else {
         None
@@ -45,10 +45,10 @@ where
 }
 
 pub fn unix_timestamp_from_rfc3339_datetime(
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     name: &str,
 ) -> Option<UnixTimestamp> {
-    matches.get_one::<String>(name).and_then(|value| {
+    matches.value_of(name).and_then(|value| {
         DateTime::parse_from_rfc3339(value)
             .ok()
             .map(|date_time| date_time.timestamp())
@@ -56,10 +56,10 @@ pub fn unix_timestamp_from_rfc3339_datetime(
 }
 
 // Return the keypair for an argument with filename `name` or None if not present.
-pub fn keypair_of(matches: &ArgMatches, name: &str) -> Option<Keypair> {
-    if let Some(value) = matches.get_one::<String>(name) {
+pub fn keypair_of(matches: &ArgMatches<'_>, name: &str) -> Option<Keypair> {
+    if let Some(value) = matches.value_of(name) {
         if value == ASK_KEYWORD {
-            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             keypair_from_seed_phrase(name, skip_validation, true, None, true).ok()
         } else {
             read_keypair_file(value).ok()
@@ -69,12 +69,12 @@ pub fn keypair_of(matches: &ArgMatches, name: &str) -> Option<Keypair> {
     }
 }
 
-pub fn keypairs_of(matches: &ArgMatches, name: &str) -> Option<Vec<Keypair>> {
-    matches.get_many::<String>(name).map(|values| {
+pub fn keypairs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Keypair>> {
+    matches.values_of(name).map(|values| {
         values
             .filter_map(|value| {
                 if value == ASK_KEYWORD {
-                    let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+                    let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
                     keypair_from_seed_phrase(name, skip_validation, true, None, true).ok()
                 } else {
                     read_keypair_file(value).ok()
@@ -86,12 +86,12 @@ pub fn keypairs_of(matches: &ArgMatches, name: &str) -> Option<Vec<Keypair>> {
 
 // Return a pubkey for an argument that can itself be parsed into a pubkey,
 // or is a filename that can be read as a keypair
-pub fn pubkey_of(matches: &ArgMatches, name: &str) -> Option<Pubkey> {
+pub fn pubkey_of(matches: &ArgMatches<'_>, name: &str) -> Option<Pubkey> {
     value_of(matches, name).or_else(|| keypair_of(matches, name).map(|keypair| keypair.pubkey()))
 }
 
-pub fn pubkeys_of(matches: &ArgMatches, name: &str) -> Option<Vec<Pubkey>> {
-    matches.get_many::<String>(name).map(|values| {
+pub fn pubkeys_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Pubkey>> {
+    matches.values_of(name).map(|values| {
         values
             .map(|value| {
                 value.parse::<Pubkey>().unwrap_or_else(|_| {
@@ -105,8 +105,8 @@ pub fn pubkeys_of(matches: &ArgMatches, name: &str) -> Option<Vec<Pubkey>> {
 }
 
 // Return pubkey/signature pairs for a string of the form pubkey=signature
-pub fn pubkeys_sigs_of(matches: &ArgMatches, name: &str) -> Option<Vec<(Pubkey, Signature)>> {
-    matches.get_many::<String>(name).map(|values| {
+pub fn pubkeys_sigs_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<(Pubkey, Signature)>> {
+    matches.values_of(name).map(|values| {
         values
             .map(|pubkey_signer_string| {
                 let mut signer = pubkey_signer_string.split('=');
@@ -121,11 +121,11 @@ pub fn pubkeys_sigs_of(matches: &ArgMatches, name: &str) -> Option<Vec<(Pubkey, 
 // Return a signer from matches at `name`
 #[allow(clippy::type_complexity)]
 pub fn signer_of(
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<(Option<Box<dyn Signer>>, Option<Pubkey>), Box<dyn std::error::Error>> {
-    if let Some(location) = matches.get_one::<String>(name) {
+    if let Some(location) = matches.value_of(name) {
         let signer = signer_from_path(matches, location, name, wallet_manager)?;
         let signer_pubkey = signer.pubkey();
         Ok((Some(signer), Some(signer_pubkey)))
@@ -135,11 +135,11 @@ pub fn signer_of(
 }
 
 pub fn pubkey_of_signer(
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<Pubkey>, Box<dyn std::error::Error>> {
-    if let Some(location) = matches.get_one::<String>(name) {
+    if let Some(location) = matches.value_of(name) {
         Ok(Some(pubkey_from_path(
             matches,
             location,
@@ -152,11 +152,11 @@ pub fn pubkey_of_signer(
 }
 
 pub fn pubkeys_of_multiple_signers(
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<Vec<Pubkey>>, Box<dyn std::error::Error>> {
-    if let Some(pubkey_matches) = matches.get_many::<String>(name) {
+    if let Some(pubkey_matches) = matches.values_of(name) {
         let mut pubkeys: Vec<Pubkey> = vec![];
         for signer in pubkey_matches {
             pubkeys.push(pubkey_from_path(matches, signer, name, wallet_manager)?);
@@ -168,30 +168,84 @@ pub fn pubkeys_of_multiple_signers(
 }
 
 pub fn resolve_signer(
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     name: &str,
     wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     resolve_signer_from_path(
         matches,
-        matches.get_one::<String>(name).unwrap(),
+        matches.value_of(name).unwrap(),
         name,
         wallet_manager,
     )
 }
 
-pub fn lamports_of_sol(matches: &ArgMatches, name: &str) -> Option<u64> {
-    value_of(matches, name).map(sol_to_lamports)
+/// Convert a SOL amount string to lamports.
+///
+/// Accepts plain or decimal strings ("50", "0.03", ".5", "1.").
+/// Any decimal places beyond 9 are truncated.
+pub fn lamports_of_sol(matches: &ArgMatches<'_>, name: &str) -> Option<u64> {
+    matches.value_of(name).and_then(|value| {
+        if value == "." {
+            None
+        } else {
+            let (sol, lamports) = value.split_once('.').unwrap_or((value, ""));
+            let sol = if sol.is_empty() {
+                0
+            } else {
+                sol.parse::<u64>().ok()?
+            };
+            let lamports = if lamports.is_empty() {
+                0
+            } else {
+                format!("{:0<9}", lamports)[..9].parse().ok()?
+            };
+            Some(
+                LAMPORTS_PER_SOL
+                    .saturating_mul(sol)
+                    .saturating_add(lamports),
+            )
+        }
+    })
 }
 
-pub fn cluster_type_of(matches: &ArgMatches, name: &str) -> Option<ClusterType> {
+pub fn cluster_type_of(matches: &ArgMatches<'_>, name: &str) -> Option<ClusterType> {
     value_of(matches, name)
 }
 
-pub fn commitment_of(matches: &ArgMatches, name: &str) -> Option<CommitmentConfig> {
+pub fn commitment_of(matches: &ArgMatches<'_>, name: &str) -> Option<CommitmentConfig> {
     matches
-        .get_one::<String>(name)
+        .value_of(name)
         .map(|value| CommitmentConfig::from_str(value).unwrap_or_default())
+}
+
+// Parse a cpu range in standard cpuset format, eg:
+//
+// 0-4,9
+// 0-2,7,12-14
+pub fn parse_cpu_ranges(data: &str) -> Result<Vec<usize>, io::Error> {
+    data.split(',')
+        .map(|range| {
+            let mut iter = range
+                .split('-')
+                .map(|s| s.parse::<usize>().map_err(|ParseIntError { .. }| range));
+            let start = iter.next().unwrap()?; // str::split always returns at least one element.
+            let end = match iter.next() {
+                None => start,
+                Some(end) => {
+                    if iter.next().is_some() {
+                        return Err(range);
+                    }
+                    end?
+                }
+            };
+            Ok(start..=end)
+        })
+        .try_fold(Vec::new(), |mut cpus, range| {
+            let range = range.map_err(|range| io::Error::new(io::ErrorKind::InvalidData, range))?;
+            cpus.extend(range);
+            Ok(cpus)
+        })
 }
 
 #[cfg(test)]
@@ -199,7 +253,7 @@ mod tests {
     use {
         super::*,
         clap::{App, Arg},
-        solana_sdk::signature::write_keypair_file,
+        solana_keypair::write_keypair_file,
         std::fs,
     };
 
@@ -228,8 +282,8 @@ mod tests {
         assert_eq!(values_of(&matches, "multiple"), Some(vec![50, 39]));
         assert_eq!(values_of::<u64>(&matches, "single"), None);
 
-        let pubkey0 = solana_sdk::pubkey::new_rand();
-        let pubkey1 = solana_sdk::pubkey::new_rand();
+        let pubkey0 = solana_pubkey::new_rand();
+        let pubkey1 = solana_pubkey::new_rand();
         let matches = app().get_matches_from(vec![
             "test",
             "--multiple",
@@ -249,7 +303,7 @@ mod tests {
         assert_eq!(value_of(&matches, "single"), Some(50));
         assert_eq!(value_of::<u64>(&matches, "multiple"), None);
 
-        let pubkey = solana_sdk::pubkey::new_rand();
+        let pubkey = solana_pubkey::new_rand();
         let matches = app().get_matches_from(vec!["test", "--single", &pubkey.to_string()]);
         assert_eq!(value_of(&matches, "single"), Some(pubkey));
     }
@@ -315,8 +369,8 @@ mod tests {
 
     #[test]
     fn test_pubkeys_sigs_of() {
-        let key1 = solana_sdk::pubkey::new_rand();
-        let key2 = solana_sdk::pubkey::new_rand();
+        let key1 = solana_pubkey::new_rand();
+        let key2 = solana_pubkey::new_rand();
         let sig1 = Keypair::new().sign_message(&[0u8]);
         let sig2 = Keypair::new().sign_message(&[1u8]);
         let signer1 = format!("{key1}={sig1}");
@@ -330,6 +384,39 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "historical reference; shows float behavior fixed in pull #4988"]
+    fn test_lamports_of_sol_origin() {
+        use solana_native_token::sol_to_lamports;
+        pub fn lamports_of_sol(matches: &ArgMatches<'_>, name: &str) -> Option<u64> {
+            value_of(matches, name).map(sol_to_lamports)
+        }
+
+        let matches = app().get_matches_from(vec!["test", "--single", "50"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(50_000_000_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
+        let matches = app().get_matches_from(vec!["test", "--single", "1.5"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(1_500_000_000));
+        assert_eq!(lamports_of_sol(&matches, "multiple"), None);
+        let matches = app().get_matches_from(vec!["test", "--single", "0.03"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", ".03"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", "1."]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(1_000_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", ".0"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(0));
+        let matches = app().get_matches_from(vec!["test", "--single", "."]);
+        assert_eq!(lamports_of_sol(&matches, "single"), None);
+        // NOT EQ
+        let matches = app().get_matches_from(vec!["test", "--single", "1.000000015"]);
+        assert_ne!(lamports_of_sol(&matches, "single"), Some(1_000_000_015));
+        let matches = app().get_matches_from(vec!["test", "--single", "0.0157"]);
+        assert_ne!(lamports_of_sol(&matches, "single"), Some(15_700_000));
+        let matches = app().get_matches_from(vec!["test", "--single", "0.5025"]);
+        assert_ne!(lamports_of_sol(&matches, "single"), Some(502_500_000));
+    }
+
+    #[test]
     fn test_lamports_of_sol() {
         let matches = app().get_matches_from(vec!["test", "--single", "50"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(50_000_000_000));
@@ -339,5 +426,31 @@ mod tests {
         assert_eq!(lamports_of_sol(&matches, "multiple"), None);
         let matches = app().get_matches_from(vec!["test", "--single", "0.03"]);
         assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", ".03"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(30_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", "1."]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(1_000_000_000));
+        let matches = app().get_matches_from(vec!["test", "--single", ".0"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(0));
+        let matches = app().get_matches_from(vec!["test", "--single", "."]);
+        assert_eq!(lamports_of_sol(&matches, "single"), None);
+        // EQ
+        let matches = app().get_matches_from(vec!["test", "--single", "1.000000015"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(1_000_000_015));
+        let matches = app().get_matches_from(vec!["test", "--single", "0.0157"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(15_700_000));
+        let matches = app().get_matches_from(vec!["test", "--single", "0.5025"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(502_500_000));
+        // Truncation of extra decimal places
+        let matches = app().get_matches_from(vec!["test", "--single", "0.1234567891"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(123_456_789));
+        let matches = app().get_matches_from(vec!["test", "--single", "0.1234567899"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), Some(123_456_789));
+        let matches = app().get_matches_from(vec!["test", "--single", "1.000.4567899"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), None);
+        let matches = app().get_matches_from(vec!["test", "--single", "6,998"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), None);
+        let matches = app().get_matches_from(vec!["test", "--single", "6,998.00"]);
+        assert_eq!(lamports_of_sol(&matches, "single"), None);
     }
 }

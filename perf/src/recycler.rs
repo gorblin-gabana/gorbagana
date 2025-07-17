@@ -57,9 +57,9 @@ impl<T: Default> Default for RecyclerX<T> {
     }
 }
 
-#[cfg(RUSTC_WITH_SPECIALIZATION)]
+#[cfg(feature = "frozen-abi")]
 impl solana_frozen_abi::abi_example::AbiExample
-    for RecyclerX<crate::cuda_runtime::PinnedVec<solana_sdk::packet::Packet>>
+    for RecyclerX<crate::cuda_runtime::PinnedVec<solana_packet::Packet>>
 {
     fn example() -> Self {
         Self::default()
@@ -74,9 +74,7 @@ pub trait Reset {
         Self: std::marker::Sized;
 }
 
-lazy_static! {
-    static ref WARM_RECYCLERS: AtomicBool = AtomicBool::new(false);
-}
+static WARM_RECYCLERS: AtomicBool = AtomicBool::new(false);
 
 pub fn enable_recycler_warming() {
     WARM_RECYCLERS.store(true, Ordering::Relaxed);
@@ -87,7 +85,6 @@ fn warm_recyclers() -> bool {
 }
 
 impl<T: Default + Reset + Sized> Recycler<T> {
-    #[allow(clippy::needless_collect)]
     pub fn warmed(num: usize, size_hint: usize) -> Self {
         let new = Self::default();
         if warm_recyclers() {

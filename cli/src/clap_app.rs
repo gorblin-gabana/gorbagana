@@ -14,6 +14,13 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
         .about(about)
         .version(version)
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .arg(
+            Arg::with_name("skip_preflight")
+                .long("skip-preflight")
+                .global(true)
+                .takes_value(false)
+                .help("Skip the preflight check when sending transactions"),
+        )
         .arg({
             let arg = Arg::with_name("config_file")
                 .short("C")
@@ -100,6 +107,12 @@ pub fn get_clap_app<'ab, 'v>(name: &str, about: &'ab str, version: &'v str) -> A
                 .global(true)
                 .conflicts_with("use_quic")
                 .help("Use UDP when sending transactions."),
+        )
+        .arg(
+            Arg::with_name("use_tpu_client")
+                .long("use-tpu-client")
+                .global(true)
+                .help("Use TPU client when sending transactions."),
         )
         .arg(
             Arg::with_name("no_address_labels")

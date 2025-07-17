@@ -1,59 +1,54 @@
-[package]
-name = "spl-token-2022"
-version = "5.0.2"
-description = "Solana Program Library Token 2022"
-authors = ["Solana Labs Maintainers <maintainers@solanalabs.com>"]
-repository = "https://github.com/solana-labs/solana-program-library"
+# The curve25519-dalek crate uses the `simd` backend by default in v4 if
+# possible, which has very slow performance on some platforms with opt-level 0,
+# which is the default for `dev` and `test` builds. This slowdown causes
+# certain interactions in the solana-test-validator, such as verifying ZK
+# proofs in transactions, to take much more than 400ms, creating problems in
+# the test environment. To give better performance in the solana-test-validator
+# during tests and dev builds, override the opt-level to 3 for the crate.
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+
+[workspace]
+resolver = "2"
+members = [
+  "clients/cli",
+  #"clients/rust", omitted from workspace until a real client is generated
+  "clients/rust-legacy",
+  "confidential-transfer/ciphertext-arithmetic",
+  "confidential-transfer/elgamal-registry",
+  "confidential-transfer/proof-extraction",
+  "confidential-transfer/proof-generation",
+  "confidential-transfer/proof-tests",
+  "program",
+]
+
+[workspace.package]
+authors = ["Anza Maintainers <maintainers@anza.xyz>"]
+repository = "https://github.com/solana-program/token-2022"
+homepage = "https://solana-program.com"
 license = "Apache-2.0"
 edition = "2021"
-exclude = ["js/**"]
 
-[features]
-no-entrypoint = []
-test-sbf = []
-serde-traits = ["dep:serde", "dep:serde_with", "dep:base64", "spl-pod/serde-traits"]
-default = ["zk-ops"]
-# Remove this feature once the underlying syscalls are released on all networks
-zk-ops = []
+[workspace.lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("frozen-abi", "no-entrypoint", "custom-heap", "custom-panic"))',
+]
 
-[dependencies]
-arrayref = "0.3.9"
-bytemuck = { workspace = true, features = ["derive"] }
-num-derive = "0.4"
-num-traits = "0.2"
-num_enum = "0.7.3"
-solana-program = "2.2.1"
-solana-security-txt = "1.1.1"
-solana-zk-sdk = "2.2.1"
-spl-elgamal-registry = { version = "0.1.0", path = "./confidential-transfer/elgamal-registry", features = ["no-entrypoint"] }
-spl-memo = "=6.0.0"
-spl-token = { version = "6.0.0",  path = "../spl-token", features = ["no-entrypoint"] }
-spl-token-confidential-transfer-ciphertext-arithmetic = { version = "0.1.0", path = "./confidential-transfer/ciphertext-arithmetic" }
-spl-token-confidential-transfer-proof-extraction = { version = "0.1.0", path = "./confidential-transfer/proof-extraction" }
-spl-token-group-interface = { version = "0.4.2", path = "../token-group/interface" }
-spl-token-metadata-interface = { version = "0.5.1", path = "../token-metadata/interface" }
-spl-transfer-hook-interface = { version = "0.8.2", path = "../transfer-hook/interface" }
-spl-type-length-value = { version = "0.6.0", path = "../libraries/type-length-value" }
-spl-pod = { workspace = true }
-thiserror = "1.0"
-serde = { version = "1.0.214", optional = true }
-serde_with = { version = "3.11.0", optional = true }
-base64 = { version = "0.22.1", optional = true }
+[workspace.metadata.cli]
+solana = "2.3.4"
 
-[target.'cfg(not(target_os = "solana"))'.dependencies]
-spl-token-confidential-transfer-proof-generation = { version = "0.1.0", path = "./confidential-transfer/proof-generation" }
+# Specify Rust toolchains for rustfmt, clippy, and build.
+# Any unprovided toolchains default to stable.
+[workspace.metadata.toolchains]
+format = "nightly-2025-02-16"
+lint = "nightly-2025-02-16"
 
-[dev-dependencies]
-lazy_static = "1.5.0"
-proptest = "1.5"
-serial_test = "3.1.1"
-solana-program-test = "2.2.1"
-solana-sdk = "2.2.1"
-spl-tlv-account-resolution = { version = "0.8.1", path = "../libraries/tlv-account-resolution" }
-serde_json = "1.0.132"
+[workspace.metadata.spellcheck]
+config = "scripts/spellcheck.toml"
 
-[lib]
-crate-type = ["cdylib", "lib"]
-
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+[workspace.metadata.release]
+pre-release-commit-message = "Publish {{crate_name}} v{{version}}"
+tag-message = "Publish {{crate_name}} v{{version}}"
+consolidate-commits = false

@@ -1,5 +1,0 @@
-# ─── General settings ─────────────────────────────────────────────────────────────
-[settings]
-cluster    = "mainnet"               # Cluster to clone from by default
-accountDir = "fixtures"              # Where JSON/.so fixtures live
-keypair    = "~/.config/solana/id.json"  # Upgrade authority for programs :contentReference[oaicite:3]{index=3}

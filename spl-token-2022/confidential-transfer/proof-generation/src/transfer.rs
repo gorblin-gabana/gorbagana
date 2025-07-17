@@ -1,8 +1,10 @@
+#[cfg(target_arch = "wasm32")]
+use solana_zk_sdk::encryption::grouped_elgamal::GroupedElGamalCiphertext3Handles;
 use {
     crate::{
         encryption::TransferAmountCiphertext, errors::TokenProofGenerationError,
-        try_combine_lo_hi_ciphertexts, try_split_u64, REMAINING_BALANCE_BIT_LENGTH,
-        TRANSFER_AMOUNT_HI_BITS, TRANSFER_AMOUNT_LO_BITS,
+        try_combine_lo_hi_ciphertexts, try_split_u64, CiphertextValidityProofWithAuditorCiphertext,
+        REMAINING_BALANCE_BIT_LENGTH, TRANSFER_AMOUNT_HI_BITS, TRANSFER_AMOUNT_LO_BITS,
     },
     solana_zk_sdk::{
         encryption::{
@@ -12,7 +14,7 @@ use {
         },
         zk_elgamal_proof_program::proof_data::{
             BatchedGroupedCiphertext3HandlesValidityProofData, BatchedRangeProofU128Data,
-            CiphertextCommitmentEqualityProofData,
+            CiphertextCommitmentEqualityProofData, ZkProofData,
         },
     },
 };
@@ -25,7 +27,8 @@ const RANGE_PROOF_PADDING_BIT_LENGTH: usize = 16;
 /// mint is not extended for fees
 pub struct TransferProofData {
     pub equality_proof_data: CiphertextCommitmentEqualityProofData,
-    pub ciphertext_validity_proof_data: BatchedGroupedCiphertext3HandlesValidityProofData,
+    pub ciphertext_validity_proof_data_with_ciphertext:
+        CiphertextValidityProofWithAuditorCiphertext,
     pub range_proof_data: BatchedRangeProofU128Data,
 }
 
@@ -54,6 +57,16 @@ pub fn transfer_split_proof_data(
             destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
         );
+    #[cfg(not(target_arch = "wasm32"))]
+    let grouped_ciphertext_lo = transfer_amount_grouped_ciphertext_lo.0;
+    #[cfg(target_arch = "wasm32")]
+    let grouped_ciphertext_lo = GroupedElGamalCiphertext3Handles::encryption_with_u64(
+        source_elgamal_keypair.pubkey(),
+        destination_elgamal_pubkey,
+        auditor_elgamal_pubkey,
+        transfer_amount_lo,
+        &transfer_amount_opening_lo,
+    );
 
     let (transfer_amount_grouped_ciphertext_hi, transfer_amount_opening_hi) =
         TransferAmountCiphertext::new(
@@ -62,6 +75,16 @@ pub fn transfer_split_proof_data(
             destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
         );
+    #[cfg(not(target_arch = "wasm32"))]
+    let grouped_ciphertext_hi = transfer_amount_grouped_ciphertext_hi.0;
+    #[cfg(target_arch = "wasm32")]
+    let grouped_ciphertext_hi = GroupedElGamalCiphertext3Handles::encryption_with_u64(
+        source_elgamal_keypair.pubkey(),
+        destination_elgamal_pubkey,
+        auditor_elgamal_pubkey,
+        transfer_amount_hi,
+        &transfer_amount_opening_hi,
+    );
 
     // Decrypt the current available balance at the source
     let current_decrypted_available_balance = current_decryptable_available_balance
@@ -111,14 +134,33 @@ pub fn transfer_split_proof_data(
         source_elgamal_keypair.pubkey(),
         destination_elgamal_pubkey,
         auditor_elgamal_pubkey,
-        &transfer_amount_grouped_ciphertext_lo.0,
-        &transfer_amount_grouped_ciphertext_hi.0,
+        &grouped_ciphertext_lo,
+        &grouped_ciphertext_hi,
         transfer_amount_lo,
         transfer_amount_hi,
         &transfer_amount_opening_lo,
         &transfer_amount_opening_hi,
     )
     .map_err(TokenProofGenerationError::from)?;
+
+    let transfer_amount_auditor_ciphertext_lo = ciphertext_validity_proof_data
+        .context_data()
+        .grouped_ciphertext_lo
+        .try_extract_ciphertext(2)
+        .map_err(|_| TokenProofGenerationError::CiphertextExtraction)?;
+
+    let transfer_amount_auditor_ciphertext_hi = ciphertext_validity_proof_data
+        .context_data()
+        .grouped_ciphertext_hi
+        .try_extract_ciphertext(2)
+        .map_err(|_| TokenProofGenerationError::CiphertextExtraction)?;
+
+    let ciphertext_validity_proof_data_with_ciphertext =
+        CiphertextValidityProofWithAuditorCiphertext {
+            proof_data: ciphertext_validity_proof_data,
+            ciphertext_lo: transfer_amount_auditor_ciphertext_lo,
+            ciphertext_hi: transfer_amount_auditor_ciphertext_hi,
+        };
 
     // generate range proof data
     let (padding_commitment, padding_opening) = Pedersen::new(0_u64);
@@ -152,7 +194,7 @@ pub fn transfer_split_proof_data(
 
     Ok(TransferProofData {
         equality_proof_data,
-        ciphertext_validity_proof_data,
+        ciphertext_validity_proof_data_with_ciphertext,
         range_proof_data,
     })
 }

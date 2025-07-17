@@ -5,26 +5,23 @@
 #[allow(deprecated)]
 use {
     crate::connection_cache::{dispatch, ConnectionCache},
+    solana_account::Account,
+    solana_client_traits::{AsyncClient, Client, SyncClient},
+    solana_commitment_config::CommitmentConfig,
+    solana_epoch_info::EpochInfo,
+    solana_hash::Hash,
+    solana_instruction::Instruction,
+    solana_keypair::Keypair,
+    solana_message::Message,
+    solana_pubkey::Pubkey,
     solana_quic_client::{QuicConfig, QuicConnectionManager, QuicPool},
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::config::RpcProgramAccountsConfig,
-    solana_sdk::{
-        account::Account,
-        client::{AsyncClient, Client, SyncClient},
-        clock::Slot,
-        commitment_config::CommitmentConfig,
-        epoch_info::EpochInfo,
-        fee_calculator::{FeeCalculator, FeeRateGovernor},
-        hash::Hash,
-        instruction::Instruction,
-        message::Message,
-        pubkey::Pubkey,
-        signature::{Keypair, Signature},
-        signers::Signers,
-        transaction::{self, Transaction, VersionedTransaction},
-        transport::Result as TransportResult,
-    },
+    solana_signature::Signature,
+    solana_signer::signers::Signers,
     solana_thin_client::thin_client::ThinClient as BackendThinClient,
+    solana_transaction::{versioned::VersionedTransaction, Transaction},
+    solana_transaction_error::{TransactionResult, TransportResult},
     solana_udp_client::{UdpConfig, UdpConnectionManager, UdpPool},
     std::{net::SocketAddr, sync::Arc, time::Duration},
 };
@@ -213,30 +210,16 @@ impl SyncClient for ThinClient {
 
     dispatch!(fn get_minimum_balance_for_rent_exemption(&self, data_len: usize) -> TransportResult<u64>);
 
-    dispatch!(#[allow(deprecated)] fn get_recent_blockhash(&self) -> TransportResult<(Hash, FeeCalculator)>);
-
-    dispatch!(#[allow(deprecated)] fn get_recent_blockhash_with_commitment(
-        &self,
-        commitment_config: CommitmentConfig
-    ) -> TransportResult<(Hash, FeeCalculator, Slot)>);
-
-    dispatch!(#[allow(deprecated)] fn get_fee_calculator_for_blockhash(
-        &self,
-        blockhash: &Hash
-    ) -> TransportResult<Option<FeeCalculator>>);
-
-    dispatch!(#[allow(deprecated)] fn get_fee_rate_governor(&self) -> TransportResult<FeeRateGovernor>);
-
     dispatch!(fn get_signature_status(
         &self,
         signature: &Signature
-    ) -> TransportResult<Option<transaction::Result<()>>>);
+    ) -> TransportResult<Option<TransactionResult<()>>>);
 
     dispatch!(fn get_signature_status_with_commitment(
         &self,
         signature: &Signature,
         commitment_config: CommitmentConfig
-    ) -> TransportResult<Option<transaction::Result<()>>>);
+    ) -> TransportResult<Option<TransactionResult<()>>>);
 
     dispatch!(fn get_slot(&self) -> TransportResult<u64>);
 
@@ -261,8 +244,6 @@ impl SyncClient for ThinClient {
     ) -> TransportResult<usize>);
 
     dispatch!(fn poll_for_signature(&self, signature: &Signature) -> TransportResult<()>);
-
-    dispatch!(#[allow(deprecated)] fn get_new_blockhash(&self, blockhash: &Hash) -> TransportResult<(Hash, FeeCalculator)>);
 
     dispatch!(fn get_latest_blockhash(&self) -> TransportResult<Hash>);
 

@@ -12,8 +12,8 @@ use {
 /// The public keys associated with a confidential mint
 pub struct MintPubkeys {
     pub destination: PodElGamalPubkey,
-    pub auditor: PodElGamalPubkey,
     pub supply: PodElGamalPubkey,
+    pub auditor: PodElGamalPubkey,
 }
 
 /// The proof context information needed to process a confidential mint
@@ -49,15 +49,15 @@ impl MintProofContext {
         // fields should be returned as part of `MintProofContext`.
         let BatchedGroupedCiphertext3HandlesValidityProofContext {
             first_pubkey: destination_elgamal_pubkey,
-            second_pubkey: auditor_elgamal_pubkey,
-            third_pubkey: supply_elgamal_pubkey_from_ciphertext_validity_proof,
+            second_pubkey: supply_elgamal_pubkey_from_ciphertext_validity_proof,
+            third_pubkey: auditor_elgamal_pubkey,
             grouped_ciphertext_lo: mint_amount_ciphertext_lo,
             grouped_ciphertext_hi: mint_amount_ciphertext_hi,
         } = ciphertext_validity_proof_context;
 
         // The range proof context consists of the Pedersen commitments and bit-lengths
         // for which the range proof is proved. The commitments must consist of
-        // two commitments pertaining to the the
+        // two commitments pertaining to the
         // low bits of the mint amount, and high bits of the mint
         // amount. These commitments must be checked for bit lengths `16` and
         // and `32`.
@@ -85,6 +85,9 @@ impl MintProofContext {
             mint_amount_commitment_hi,
         ];
 
+        // range proof context always contains 8 commitments and therefore,
+        // this check will verify equality of all expected commitments
+        // (`zip` will not be short-circuited)
         if !range_proof_commitments
             .iter()
             .zip(expected_commitments.iter())
@@ -106,6 +109,9 @@ impl MintProofContext {
         ]
         .iter();
 
+        // range proof context always contains 8 bit lengths and therefore,
+        // this check will verify equality of all expected bit lengths
+        // (`zip` will not be short-circuited)
         if !range_proof_bit_lengths
             .iter()
             .zip(expected_bit_lengths)
@@ -116,8 +122,8 @@ impl MintProofContext {
 
         let mint_pubkeys = MintPubkeys {
             destination: *destination_elgamal_pubkey,
-            auditor: *auditor_elgamal_pubkey,
             supply: *supply_elgamal_pubkey_from_equality_proof,
+            auditor: *auditor_elgamal_pubkey,
         };
 
         Ok(MintProofContext {

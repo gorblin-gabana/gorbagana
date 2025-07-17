@@ -15,27 +15,26 @@ use {
     pickledb::PickleDb,
     serde::{Deserialize, Serialize},
     solana_account_decoder::parse_token::real_number_string,
+    solana_clock::Slot,
+    solana_commitment_config::CommitmentConfig,
+    solana_hash::Hash,
+    solana_instruction::Instruction,
+    solana_message::Message,
+    solana_native_token::{lamports_to_sol, sol_to_lamports},
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
         client_error::{Error as ClientError, Result as ClientResult},
         config::RpcSendTransactionConfig,
         request::{MAX_GET_SIGNATURE_STATUSES_QUERY_ITEMS, MAX_MULTIPLE_ACCOUNTS},
     },
-    solana_sdk::{
-        clock::Slot,
-        commitment_config::CommitmentConfig,
-        hash::Hash,
-        instruction::Instruction,
-        message::Message,
-        native_token::{lamports_to_sol, sol_to_lamports},
-        signature::{unique_signers, Signature, Signer},
-        stake::{
-            instruction::{self as stake_instruction, LockupArgs},
-            state::{Authorized, Lockup, StakeAuthorize, StakeStateV2},
-        },
-        system_instruction,
-        transaction::Transaction,
+    solana_signature::Signature,
+    solana_signer::{unique_signers, Signer},
+    solana_stake_interface::{
+        instruction::{self as stake_instruction, LockupArgs},
+        state::{Authorized, Lockup, StakeAuthorize, StakeStateV2},
     },
+    solana_system_interface::instruction as system_instruction,
+    solana_transaction::Transaction,
     solana_transaction_status::TransactionStatus,
     spl_associated_token_account::get_associated_token_address,
     spl_token::solana_program::program_error::ProgramError,
@@ -104,6 +103,7 @@ impl From<Vec<FundingSource>> for FundingSources {
 
 type StakeExtras = Vec<(Keypair, Option<DateTime<Utc>>)>;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("I/O error")]
@@ -341,12 +341,7 @@ fn build_messages(
                 .iter()
                 .map(|x| {
                     let wallet_address = x.recipient;
-                    // Convert solana_sdk::pubkey::Pubkey to __Pubkey for spl functions
-                    let spl_wallet_address = spl_token::solana_program::pubkey::Pubkey::new_from_array(wallet_address.to_bytes());
-                    let spl_mint = spl_token::solana_program::pubkey::Pubkey::new_from_array(spl_token_args.mint.to_bytes());
-                    let associated_token_address = get_associated_token_address(&spl_wallet_address, &spl_mint);
-                    // Convert back to solana_sdk::pubkey::Pubkey for client call
-                    solana_sdk::pubkey::Pubkey::new_from_array(associated_token_address.to_bytes())
+                    get_associated_token_address(&wallet_address, &spl_token_args.mint)
                 })
                 .collect::<Vec<_>>();
             let mut maybe_accounts = client.get_multiple_accounts(&associated_token_addresses)?;
@@ -439,7 +434,7 @@ fn send_messages(
         let signers = unique_signers(signers);
         let result: ClientResult<(Transaction, u64)> = {
             if args.dry_run {
-                Ok((Transaction::new_unsigned(message), std::u64::MAX))
+                Ok((Transaction::new_unsigned(message), u64::MAX))
             } else {
                 let (blockhash, last_valid_block_height) =
                     client.get_latest_blockhash_with_commitment(CommitmentConfig::default())?;
@@ -509,7 +504,6 @@ fn distribute_allocations(
     Ok(())
 }
 
-#[allow(clippy::needless_collect)]
 fn read_allocations(
     input_csv: &str,
     transfer_amount: Option<u64>,
@@ -960,10 +954,8 @@ pub fn process_transaction_log(args: &TransactionLogArgs) -> Result<(), Error> {
 
 use {
     crate::db::check_output_file,
-    solana_sdk::{
-        pubkey::{self, Pubkey},
-        signature::Keypair,
-    },
+    solana_keypair::Keypair,
+    solana_pubkey::{self as pubkey, Pubkey},
     tempfile::{tempdir, NamedTempFile},
 };
 
@@ -1312,11 +1304,10 @@ pub fn test_process_distribute_stake_with_client(client: &RpcClient, sender_keyp
 mod tests {
     use {
         super::*,
-        solana_sdk::{
-            instruction::AccountMeta,
-            signature::{read_keypair_file, write_keypair_file, Signer},
-            stake::instruction::StakeInstruction,
-        },
+        solana_instruction::AccountMeta,
+        solana_keypair::{read_keypair_file, write_keypair_file},
+        solana_signer::Signer,
+        solana_stake_interface::instruction::StakeInstruction,
         solana_streamer::socket::SocketAddrSpace,
         solana_test_validator::TestValidator,
         solana_transaction_status::TransactionConfirmationStatus,
@@ -2501,7 +2492,7 @@ mod tests {
             new_stake_account_address: None,
             finalized_date: None,
             transaction: Transaction::new_unsigned(message),
-            last_valid_block_height: std::u64::MAX,
+            last_valid_block_height: u64::MAX,
             lockup_date: None,
         }));
 

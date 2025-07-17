@@ -1,6 +1,6 @@
 use {
     crate::{input_validators::*, ArgConstant},
-    clap::{Command, Arg},
+    clap::{App, Arg},
 };
 
 pub const BLOCKHASH_ARG: ArgConstant<'static> = ArgConstant {
@@ -27,51 +27,54 @@ pub const DUMP_TRANSACTION_MESSAGE: ArgConstant<'static> = ArgConstant {
     help: "Display the base64 encoded binary transaction message in sign-only mode",
 };
 
-pub fn blockhash_arg() -> Arg {
-    Arg::new(BLOCKHASH_ARG.name)
+pub fn blockhash_arg<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(BLOCKHASH_ARG.name)
         .long(BLOCKHASH_ARG.long)
+        .takes_value(true)
         .value_name("BLOCKHASH")
-        .value_parser(|s: &str| is_hash(s).map(|_| s.to_string()))
+        .validator(is_hash)
         .help(BLOCKHASH_ARG.help)
 }
 
-pub fn sign_only_arg() -> Arg {
-    Arg::new(SIGN_ONLY_ARG.name)
+pub fn sign_only_arg<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(SIGN_ONLY_ARG.name)
         .long(SIGN_ONLY_ARG.long)
-        .action(clap::ArgAction::SetTrue)
+        .takes_value(false)
         .requires(BLOCKHASH_ARG.name)
         .help(SIGN_ONLY_ARG.help)
 }
 
-fn signer_arg() -> Arg {
-    Arg::new(SIGNER_ARG.name)
+fn signer_arg<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(SIGNER_ARG.name)
         .long(SIGNER_ARG.long)
+        .takes_value(true)
         .value_name("PUBKEY=SIGNATURE")
-        .value_parser(|s: &str| is_pubkey_sig(s).map(|_| s.to_string()))
+        .validator(is_pubkey_sig)
         .requires(BLOCKHASH_ARG.name)
-        .action(clap::ArgAction::Append)
+        .multiple(true)
+        .number_of_values(1)
         .help(SIGNER_ARG.help)
 }
 
-pub fn dump_transaction_message() -> Arg {
-    Arg::new(DUMP_TRANSACTION_MESSAGE.name)
+pub fn dump_transaction_message<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name(DUMP_TRANSACTION_MESSAGE.name)
         .long(DUMP_TRANSACTION_MESSAGE.long)
-        .action(clap::ArgAction::SetTrue)
+        .takes_value(false)
         .requires(SIGN_ONLY_ARG.name)
         .help(DUMP_TRANSACTION_MESSAGE.help)
 }
 
 pub trait ArgsConfig {
-    fn blockhash_arg(&self, arg: Arg) -> Arg {
+    fn blockhash_arg<'a, 'b>(&self, arg: Arg<'a, 'b>) -> Arg<'a, 'b> {
         arg
     }
-    fn sign_only_arg(&self, arg: Arg) -> Arg {
+    fn sign_only_arg<'a, 'b>(&self, arg: Arg<'a, 'b>) -> Arg<'a, 'b> {
         arg
     }
-    fn signer_arg(&self, arg: Arg) -> Arg {
+    fn signer_arg<'a, 'b>(&self, arg: Arg<'a, 'b>) -> Arg<'a, 'b> {
         arg
     }
-    fn dump_transaction_message_arg(&self, arg: Arg) -> Arg {
+    fn dump_transaction_message_arg<'a, 'b>(&self, arg: Arg<'a, 'b>) -> Arg<'a, 'b> {
         arg
     }
 }
@@ -81,7 +84,7 @@ pub trait OfflineArgs {
     fn offline_args_config(self, config: &dyn ArgsConfig) -> Self;
 }
 
-impl OfflineArgs for Command {
+impl OfflineArgs for App<'_, '_> {
     fn offline_args_config(self, config: &dyn ArgsConfig) -> Self {
         self.arg(config.blockhash_arg(blockhash_arg()))
             .arg(config.sign_only_arg(sign_only_arg()))

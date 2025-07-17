@@ -6,32 +6,29 @@
 use {
     log::*,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
+    solana_account::Account,
+    solana_client_traits::{AsyncClient, Client, SyncClient},
+    solana_clock::MAX_PROCESSING_AGE,
+    solana_commitment_config::CommitmentConfig,
     solana_connection_cache::{
         client_connection::ClientConnection,
         connection_cache::{
             ConnectionCache, ConnectionManager, ConnectionPool, NewConnectionConfig,
         },
     },
+    solana_epoch_info::EpochInfo,
+    solana_hash::Hash,
+    solana_instruction::Instruction,
+    solana_keypair::Keypair,
+    solana_message::Message,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_rpc_client_api::{config::RpcProgramAccountsConfig, response::Response},
-    solana_sdk::{
-        account::Account,
-        client::{AsyncClient, Client, SyncClient},
-        clock::{Slot, MAX_PROCESSING_AGE},
-        commitment_config::CommitmentConfig,
-        epoch_info::EpochInfo,
-        fee_calculator::{FeeCalculator, FeeRateGovernor},
-        hash::Hash,
-        instruction::Instruction,
-        message::Message,
-        pubkey::Pubkey,
-        signature::{Keypair, Signature, Signer},
-        signers::Signers,
-        system_instruction,
-        timing::duration_as_ms,
-        transaction::{self, Transaction, VersionedTransaction},
-        transport::Result as TransportResult,
-    },
+    solana_rpc_client_api::config::RpcProgramAccountsConfig,
+    solana_signature::Signature,
+    solana_signer::{signers::Signers, Signer},
+    solana_system_interface::instruction::transfer,
+    solana_transaction::{versioned::VersionedTransaction, Transaction},
+    solana_transaction_error::{TransactionResult, TransportResult},
     std::{
         io,
         net::SocketAddr,
@@ -57,7 +54,7 @@ impl ClientOptimizer {
             cur_index: AtomicUsize::new(0),
             experiment_index: AtomicUsize::new(0),
             experiment_done: AtomicBool::new(false),
-            times: RwLock::new(vec![std::u64::MAX; num_clients]),
+            times: RwLock::new(vec![u64::MAX; num_clients]),
             num_clients,
         }
     }
@@ -77,7 +74,7 @@ impl ClientOptimizer {
 
     fn report(&self, index: usize, time_ms: u64) {
         if self.num_clients > 1
-            && (!self.experiment_done.load(Ordering::Relaxed) || time_ms == std::u64::MAX)
+            && (!self.experiment_done.load(Ordering::Relaxed) || time_ms == u64::MAX)
         {
             trace!(
                 "report {} with {} exp: {}",
@@ -88,7 +85,7 @@ impl ClientOptimizer {
 
             self.times.write().unwrap()[index] = time_ms;
 
-            if index == (self.num_clients - 1) || time_ms == std::u64::MAX {
+            if index == (self.num_clients - 1) || time_ms == u64::MAX {
                 let times = self.times.read().unwrap();
                 let (min_time, min_index) = min_index(&times);
                 trace!(
@@ -111,7 +108,7 @@ impl ClientOptimizer {
 }
 
 /// An object for querying and sending transactions to the network.
-#[deprecated(since = "1.19.0", note = "Use [RpcClient] or [TpuClient] instead.")]
+#[deprecated(since = "2.0.0", note = "Use [RpcClient] or [TpuClient] instead.")]
 pub struct ThinClient<
     P, // ConnectionPool
     M, // ConnectionManager
@@ -253,11 +250,7 @@ where
             let blockhash = self.get_latest_blockhash()?;
             transaction.sign(keypairs, blockhash);
         }
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("retry_transfer failed in {tries} retries"),
-        )
-        .into())
+        Err(io::Error::other(format!("retry_transfer failed in {tries} retries")).into())
     }
 
     pub fn poll_get_balance(&self, pubkey: &Pubkey) -> TransportResult<u64> {
@@ -370,8 +363,7 @@ where
         keypair: &Keypair,
         pubkey: &Pubkey,
     ) -> TransportResult<Signature> {
-        let transfer_instruction =
-            system_instruction::transfer(&keypair.pubkey(), pubkey, lamports);
+        let transfer_instruction = transfer(&keypair.pubkey(), pubkey, lamports);
         self.send_and_confirm_instruction(keypair, transfer_instruction)
     }
 
@@ -419,64 +411,15 @@ where
             .map_err(|e| e.into())
     }
 
-    fn get_recent_blockhash(&self) -> TransportResult<(Hash, FeeCalculator)> {
-        #[allow(deprecated)]
-        let (blockhash, fee_calculator, _last_valid_slot) =
-            self.get_recent_blockhash_with_commitment(CommitmentConfig::default())?;
-        Ok((blockhash, fee_calculator))
-    }
-
-    fn get_recent_blockhash_with_commitment(
-        &self,
-        commitment_config: CommitmentConfig,
-    ) -> TransportResult<(Hash, FeeCalculator, Slot)> {
-        let index = self.optimizer.experiment();
-        let now = Instant::now();
-        #[allow(deprecated)]
-        let recent_blockhash =
-            self.rpc_clients[index].get_recent_blockhash_with_commitment(commitment_config);
-        match recent_blockhash {
-            Ok(Response { value, .. }) => {
-                self.optimizer.report(index, duration_as_ms(&now.elapsed()));
-                Ok((value.0, value.1, value.2))
-            }
-            Err(e) => {
-                self.optimizer.report(index, std::u64::MAX);
-                Err(e.into())
-            }
-        }
-    }
-
-    fn get_fee_calculator_for_blockhash(
-        &self,
-        blockhash: &Hash,
-    ) -> TransportResult<Option<FeeCalculator>> {
-        #[allow(deprecated)]
-        self.rpc_client()
-            .get_fee_calculator_for_blockhash(blockhash)
-            .map_err(|e| e.into())
-    }
-
-    fn get_fee_rate_governor(&self) -> TransportResult<FeeRateGovernor> {
-        #[allow(deprecated)]
-        self.rpc_client()
-            .get_fee_rate_governor()
-            .map_err(|e| e.into())
-            .map(|r| r.value)
-    }
-
     fn get_signature_status(
         &self,
         signature: &Signature,
-    ) -> TransportResult<Option<transaction::Result<()>>> {
+    ) -> TransportResult<Option<TransactionResult<()>>> {
         let status = self
             .rpc_client()
             .get_signature_status(signature)
             .map_err(|err| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("send_transaction failed with error {err:?}"),
-                )
+                io::Error::other(format!("send_transaction failed with error {err:?}"))
             })?;
         Ok(status)
     }
@@ -485,15 +428,12 @@ where
         &self,
         signature: &Signature,
         commitment_config: CommitmentConfig,
-    ) -> TransportResult<Option<transaction::Result<()>>> {
+    ) -> TransportResult<Option<TransactionResult<()>>> {
         let status = self
             .rpc_client()
             .get_signature_status_with_commitment(signature, commitment_config)
             .map_err(|err| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("send_transaction failed with error {err:?}"),
-                )
+                io::Error::other(format!("send_transaction failed with error {err:?}"))
             })?;
         Ok(status)
     }
@@ -510,10 +450,7 @@ where
             .rpc_client()
             .get_slot_with_commitment(commitment_config)
             .map_err(|err| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("send_transaction failed with error {err:?}"),
-                )
+                io::Error::other(format!("send_transaction failed with error {err:?}"))
             })?;
         Ok(slot)
     }
@@ -527,11 +464,12 @@ where
         let now = Instant::now();
         match self.rpc_client().get_transaction_count() {
             Ok(transaction_count) => {
-                self.optimizer.report(index, duration_as_ms(&now.elapsed()));
+                self.optimizer
+                    .report(index, now.elapsed().as_millis() as u64);
                 Ok(transaction_count)
             }
             Err(e) => {
-                self.optimizer.report(index, std::u64::MAX);
+                self.optimizer.report(index, u64::MAX);
                 Err(e.into())
             }
         }
@@ -548,11 +486,12 @@ where
             .get_transaction_count_with_commitment(commitment_config)
         {
             Ok(transaction_count) => {
-                self.optimizer.report(index, duration_as_ms(&now.elapsed()));
+                self.optimizer
+                    .report(index, now.elapsed().as_millis() as u64);
                 Ok(transaction_count)
             }
             Err(e) => {
-                self.optimizer.report(index, std::u64::MAX);
+                self.optimizer.report(index, u64::MAX);
                 Err(e.into())
             }
         }
@@ -575,13 +514,6 @@ where
             .map_err(|e| e.into())
     }
 
-    fn get_new_blockhash(&self, blockhash: &Hash) -> TransportResult<(Hash, FeeCalculator)> {
-        #[allow(deprecated)]
-        self.rpc_client()
-            .get_new_blockhash(blockhash)
-            .map_err(|e| e.into())
-    }
-
     fn get_latest_blockhash(&self) -> TransportResult<Hash> {
         let (blockhash, _) =
             self.get_latest_blockhash_with_commitment(CommitmentConfig::default())?;
@@ -596,11 +528,12 @@ where
         let now = Instant::now();
         match self.rpc_clients[index].get_latest_blockhash_with_commitment(commitment_config) {
             Ok((blockhash, last_valid_block_height)) => {
-                self.optimizer.report(index, duration_as_ms(&now.elapsed()));
+                self.optimizer
+                    .report(index, now.elapsed().as_millis() as u64);
                 Ok((blockhash, last_valid_block_height))
             }
             Err(e) => {
-                self.optimizer.report(index, std::u64::MAX);
+                self.optimizer.report(index, u64::MAX);
                 Err(e.into())
             }
         }
@@ -656,7 +589,7 @@ where
 }
 
 fn min_index(array: &[u64]) -> (u64, usize) {
-    let mut min_time = std::u64::MAX;
+    let mut min_time = u64::MAX;
     let mut min_index = 0;
     for (i, time) in array.iter().enumerate() {
         if *time < min_time {
@@ -686,7 +619,7 @@ mod tests {
         optimizer.report(index, 50);
         assert_eq!(optimizer.best(), NUM_CLIENTS - 1);
 
-        optimizer.report(optimizer.best(), std::u64::MAX);
+        optimizer.report(optimizer.best(), u64::MAX);
         assert_eq!(optimizer.best(), NUM_CLIENTS - 2);
     }
 }

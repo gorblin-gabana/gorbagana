@@ -1,6 +1,6 @@
 [package]
-name = "solana-store-tool"
-description = "Tool to inspect append vecs"
+name = "agave-store-tool"
+description = "Tool for account storage files"
 publish = false
 version = { workspace = true }
 authors = { workspace = true }
@@ -9,13 +9,15 @@ homepage = { workspace = true }
 license = { workspace = true }
 edition = { workspace = true }
 
-[dependencies]
-clap = { workspace = true }
-log = { workspace = true }
-solana-accounts-db = { workspace = true }
-solana-logger = { workspace = true }
-solana-sdk = { workspace = true }
-solana-version = { workspace = true }
+[features]
+dev-context-only-utils = []
 
-[package.metadata.docs.rs]
-targets = ["x86_64-unknown-linux-gnu"]
+[dependencies]
+ahash = { workspace = true }
+clap = { workspace = true }
+rayon = { workspace = true }
+solana-account = { workspace = true }
+solana-accounts-db = { workspace = true, features = ["dev-context-only-utils"] }
+solana-pubkey = { workspace = true }
+solana-system-interface = { workspace = true }
+solana-version = { workspace = true }

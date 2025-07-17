@@ -3,10 +3,10 @@
 use crate::pubkey_bins::PubkeyBinCalculator24;
 use {
     crate::{accounts_hash::CalculateHashIntermediate, cache_hash_data_stats::CacheHashDataStats},
-    bytemuck::{Pod, Zeroable},
+    bytemuck_derive::{Pod, Zeroable},
     memmap2::MmapMut,
+    solana_clock::Slot,
     solana_measure::measure::Measure,
-    solana_sdk::clock::Slot,
     std::{
         collections::HashSet,
         fs::{self, remove_file, File, OpenOptions},
@@ -17,21 +17,25 @@ use {
 };
 
 pub type EntryType = CalculateHashIntermediate;
-pub type SavedType = Vec<Vec<EntryType>>;
 pub type SavedTypeSlice = [Vec<EntryType>];
+
+#[cfg(test)]
+pub type SavedType = Vec<Vec<EntryType>>;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct Header {
-    count: usize,
+    pub count: usize,
 }
 
 // In order to safely guarantee Header is Pod, it cannot have any padding
 // This is obvious by inspection, but this will also catch any inadvertent
 // changes in the future (i.e. it is a test).
+// Additionally, we compare the header size with `u64` instead of `usize`
+// to ensure binary compatibility doesn't break.
 const _: () = assert!(
-    std::mem::size_of::<Header>() == std::mem::size_of::<usize>(),
-    "Header cannot have any padding"
+    std::mem::size_of::<Header>() == std::mem::size_of::<u64>(),
+    "Header cannot have any padding and must be the same size as u64",
 );
 
 /// cache hash data file to be mmapped later
@@ -85,8 +89,11 @@ impl CacheHashDataFileReference {
         }
         cache_file.capacity = capacity;
         assert_eq!(
-            capacity, file_len,
-            "expected: {capacity}, len on disk: {file_len} {}, entries: {entries}, cell_size: {cell_size}", self.path.display(),
+            capacity,
+            file_len,
+            "expected: {capacity}, len on disk: {file_len} {}, entries: {entries}, cell_size: \
+             {cell_size}",
+            self.path.display(),
         );
 
         self.stats
@@ -176,7 +183,7 @@ impl CacheHashDataFile {
         let mut data = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
+            .create_new(true)
             .open(file)?;
 
         // Theoretical performance optimization: write a zero to the end of
@@ -203,6 +210,9 @@ impl Drop for CacheHashData {
         self.stats.report();
     }
 }
+
+/// The suffix to append to a cache hash data filename to indicate that the file is being written.
+const IN_PROGRESS_SUFFIX: &str = ".in-progress";
 
 impl CacheHashData {
     pub(crate) fn new(cache_dir: PathBuf, deletion_policy: DeletionPolicy) -> CacheHashData {
@@ -265,6 +275,12 @@ impl CacheHashData {
             if let Ok(dir) = dir {
                 let mut pre_existing = self.pre_existing_cache_files.lock().unwrap();
                 for entry in dir.flatten() {
+                    if entry.path().ends_with(IN_PROGRESS_SUFFIX) {
+                        // ignore in-progress files and delete them
+                        let _ = fs::remove_file(entry.path());
+                        continue;
+                    }
+
                     if let Some(name) = entry.path().file_name() {
                         pre_existing.insert(PathBuf::from(name));
                     }
@@ -316,30 +332,45 @@ impl CacheHashData {
         file_name: impl AsRef<Path>,
         data: &SavedTypeSlice,
     ) -> Result<(), std::io::Error> {
-        self.save_internal(file_name, data)
+        // delete any existing file at this path
+        let cache_path = self.cache_dir.join(file_name.as_ref());
+        let _ignored = remove_file(&cache_path);
+
+        // Append ".in-progress" to the filename to indicate that the file is
+        // being written
+        let work_in_progress_file_full_path = self
+            .cache_dir
+            .join(Self::get_work_in_progress_file_name(file_name.as_ref()));
+        Self::save_internal(&work_in_progress_file_full_path, data, &self.stats)?;
+        // Rename the file to remove the ".in-progress" suffix after the file
+        // has been successfully written. This is done to ensure that the file is
+        // not read before it has been completely written. For example, if the
+        // validator was stopped or crashed in the middle of writing the file, the file
+        // would be incomplete and would not be read by the validator on next restart.
+        fs::rename(work_in_progress_file_full_path, cache_path)
+    }
+
+    fn get_work_in_progress_file_name(file_name: impl AsRef<Path>) -> PathBuf {
+        let mut s = PathBuf::from(file_name.as_ref()).into_os_string();
+        s.push(IN_PROGRESS_SUFFIX);
+        s.into()
     }
 
     fn save_internal(
-        &self,
-        file_name: impl AsRef<Path>,
+        in_progress_cache_file_full_path: impl AsRef<Path>,
         data: &SavedTypeSlice,
+        stats: &CacheHashDataStats,
     ) -> Result<(), std::io::Error> {
         let mut m = Measure::start("save");
-        let cache_path = self.cache_dir.join(file_name);
-        // overwrite any existing file at this path
-        let _ignored = remove_file(&cache_path);
+        let _ignored = remove_file(&in_progress_cache_file_full_path);
         let cell_size = std::mem::size_of::<EntryType>() as u64;
         let mut m1 = Measure::start("create save");
-        let entries = data
-            .iter()
-            .map(|x: &Vec<EntryType>| x.len())
-            .collect::<Vec<_>>();
-        let entries = entries.iter().sum::<usize>();
+        let entries = data.iter().map(Vec::len).sum::<usize>();
         let capacity = cell_size * (entries as u64) + std::mem::size_of::<Header>() as u64;
 
-        let mmap = CacheHashDataFile::new_map(&cache_path, capacity)?;
+        let mmap = CacheHashDataFile::new_map(&in_progress_cache_file_full_path, capacity)?;
         m1.stop();
-        self.stats
+        stats
             .create_save_us
             .fetch_add(m1.as_us(), Ordering::Relaxed);
         let mut cache_file = CacheHashDataFile {
@@ -351,12 +382,10 @@ impl CacheHashData {
         let header = cache_file.get_header_mut();
         header.count = entries;
 
-        self.stats
+        stats
             .cache_file_size
             .fetch_add(capacity as usize, Ordering::Relaxed);
-        self.stats
-            .total_entries
-            .fetch_add(entries, Ordering::Relaxed);
+        stats.total_entries.fetch_add(entries, Ordering::Relaxed);
 
         let mut m2 = Measure::start("write_to_mmap");
         let mut i = 0;
@@ -369,12 +398,12 @@ impl CacheHashData {
         });
         assert_eq!(i, entries);
         m2.stop();
-        self.stats
+        m.stop();
+        stats
             .write_to_mmap_us
             .fetch_add(m2.as_us(), Ordering::Relaxed);
-        m.stop();
-        self.stats.save_us.fetch_add(m.as_us(), Ordering::Relaxed);
-        self.stats.saved_to_cache.fetch_add(1, Ordering::Relaxed);
+        stats.save_us.fetch_add(m.as_us(), Ordering::Relaxed);
+        stats.saved_to_cache.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -392,7 +421,7 @@ pub struct ParsedFilename {
 /// Parses a cache hash data filename into its parts
 ///
 /// Returns None if the filename is invalid
-fn parse_filename(cache_filename: impl AsRef<Path>) -> Option<ParsedFilename> {
+pub fn parse_filename(cache_filename: impl AsRef<Path>) -> Option<ParsedFilename> {
     let filename = cache_filename.as_ref().to_string_lossy().to_string();
     let parts: Vec<_> = filename.split('.').collect(); // The parts are separated by a `.`
     if parts.len() != 5 {
@@ -520,7 +549,8 @@ mod tests {
                         }
                         assert_eq!(
                             accum, data_this_pass,
-                            "bins: {bins}, start_bin_this_pass: {start_bin_this_pass}, pass: {pass}, flatten: {flatten_data}, passes: {passes}"
+                            "bins: {bins}, start_bin_this_pass: {start_bin_this_pass}, pass: \
+                             {pass}, flatten: {flatten_data}, passes: {passes}"
                         );
                     }
                 }
@@ -562,14 +592,14 @@ mod tests {
                                 let mut pk;
                                 loop {
                                     // expensive, but small numbers and for tests, so ok
-                                    pk = solana_sdk::pubkey::new_rand();
+                                    pk = solana_pubkey::new_rand();
                                     if binner.bin_from_pubkey(&pk) == bin {
                                         break;
                                     }
                                 }
 
                                 CalculateHashIntermediate {
-                                    hash: AccountHash(solana_sdk::hash::Hash::new_unique()),
+                                    hash: AccountHash(solana_hash::Hash::new_unique()),
                                     lamports: ct as u64,
                                     pubkey: pk,
                                 }
@@ -585,6 +615,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::used_underscore_binding)]
     fn test_parse_filename() {
         let good_filename = "123.456.0.65536.537d65697d9b2baa";
         let parsed_filename = parse_filename(good_filename).unwrap();
@@ -617,5 +648,12 @@ mod tests {
         for bad_filename in bad_filenames {
             assert!(parse_filename(bad_filename).is_none());
         }
+    }
+
+    #[test]
+    fn tet_get_work_in_progress_file_name() {
+        let filename = "test";
+        let work_in_progress_filename = CacheHashData::get_work_in_progress_file_name(filename);
+        assert_eq!(work_in_progress_filename.as_os_str(), "test.in-progress");
     }
 }

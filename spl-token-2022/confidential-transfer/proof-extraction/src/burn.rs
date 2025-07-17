@@ -12,8 +12,8 @@ use {
 /// The public keys associated with a confidential burn
 pub struct BurnPubkeys {
     pub source: PodElGamalPubkey,
-    pub auditor: PodElGamalPubkey,
     pub supply: PodElGamalPubkey,
+    pub auditor: PodElGamalPubkey,
 }
 
 /// The proof context information needed to process a confidential burn
@@ -32,7 +32,7 @@ impl BurnProofContext {
         range_proof_context: &BatchedRangeProofContext,
     ) -> Result<Self, TokenProofExtractionError> {
         // The equality proof context consists of the source ElGamal public key, the new
-        // source available balance ciphertext, and the new source avaialble
+        // source available balance ciphertext, and the new source available
         // balance commitment. The public key should be checked with ciphertext
         // validity proof context for consistency and the commitment should be
         // checked with range proof for consistency. The public key and
@@ -51,8 +51,8 @@ impl BurnProofContext {
         // `BurnProofContext`.
         let BatchedGroupedCiphertext3HandlesValidityProofContext {
             first_pubkey: source_elgamal_pubkey_from_validity_proof,
-            second_pubkey: auditor_elgamal_pubkey,
-            third_pubkey: supply_elgamal_pubkey,
+            second_pubkey: supply_elgamal_pubkey,
+            third_pubkey: auditor_elgamal_pubkey,
             grouped_ciphertext_lo: burn_amount_ciphertext_lo,
             grouped_ciphertext_hi: burn_amount_ciphertext_hi,
         } = ciphertext_validity_proof_context;
@@ -85,6 +85,9 @@ impl BurnProofContext {
             burn_amount_commitment_hi,
         ];
 
+        // range proof context always contains 8 commitments and therefore,
+        // this check will verify equality of all expected commitments
+        // (`zip` will not be short-circuited)
         if !range_proof_commitments
             .iter()
             .zip(expected_commitments.iter())
@@ -106,6 +109,9 @@ impl BurnProofContext {
         ]
         .iter();
 
+        // range proof context always contains 8 bit lengths and therefore,
+        // this check will verify equality of all expected bit lengths
+        // (`zip` will not be short-circuited)
         if !range_proof_bit_lengths
             .iter()
             .zip(expected_bit_lengths)
@@ -116,8 +122,8 @@ impl BurnProofContext {
 
         let burn_pubkeys = BurnPubkeys {
             source: *source_elgamal_pubkey_from_equality_proof,
-            auditor: *auditor_elgamal_pubkey,
             supply: *supply_elgamal_pubkey,
+            auditor: *auditor_elgamal_pubkey,
         };
 
         Ok(BurnProofContext {

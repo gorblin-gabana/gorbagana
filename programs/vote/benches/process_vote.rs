@@ -3,21 +3,23 @@
 extern crate test;
 
 use {
-    solana_program_runtime::invoke_context::mock_process_instruction,
-    solana_sdk::{
-        account::{create_account_for_test, Account, AccountSharedData},
-        clock::{Clock, Slot},
-        hash::Hash,
-        instruction::AccountMeta,
-        pubkey::Pubkey,
-        slot_hashes::{SlotHashes, MAX_ENTRIES},
-        sysvar,
-        transaction_context::TransactionAccount,
+    agave_feature_set::{deprecate_legacy_vote_ixs, FeatureSet},
+    solana_account::{create_account_for_test, Account, AccountSharedData},
+    solana_clock::{Clock, Slot},
+    solana_hash::Hash,
+    solana_instruction::AccountMeta,
+    solana_program_runtime::invoke_context::{
+        mock_process_instruction, mock_process_instruction_with_feature_set,
     },
+    solana_pubkey::Pubkey,
+    solana_sdk_ids::sysvar,
+    solana_slot_hashes::{SlotHashes, MAX_ENTRIES},
+    solana_transaction_context::TransactionAccount,
     solana_vote_program::{
         vote_instruction::VoteInstruction,
         vote_state::{
-            Vote, VoteInit, VoteState, VoteStateUpdate, VoteStateVersions, MAX_LOCKOUT_HISTORY,
+            TowerSync, Vote, VoteInit, VoteState, VoteStateUpdate, VoteStateVersions,
+            MAX_LOCKOUT_HISTORY,
         },
     },
     test::Bencher,
@@ -48,7 +50,7 @@ fn create_accounts() -> (Slot, SlotHashes, Vec<TransactionAccount>, Vec<AccountM
         );
 
         for next_vote_slot in 0..num_initial_votes {
-            vote_state.process_next_vote_slot(next_vote_slot, 0, 0, true, true);
+            vote_state.process_next_vote_slot(next_vote_slot, 0, 0);
         }
         let mut vote_account_data: Vec<u8> = vec![0; VoteState::size_of()];
         let versioned = VoteStateVersions::new_current(vote_state);
@@ -94,6 +96,30 @@ fn create_accounts() -> (Slot, SlotHashes, Vec<TransactionAccount>, Vec<AccountM
     )
 }
 
+fn bench_process_deprecated_vote_instruction(
+    bencher: &mut Bencher,
+    transaction_accounts: Vec<TransactionAccount>,
+    instruction_account_metas: Vec<AccountMeta>,
+    instruction_data: Vec<u8>,
+) {
+    let mut deprecated_feature_set = FeatureSet::all_enabled();
+    deprecated_feature_set.deactivate(&deprecate_legacy_vote_ixs::id());
+    bencher.iter(|| {
+        mock_process_instruction_with_feature_set(
+            &solana_vote_program::id(),
+            Vec::new(),
+            &instruction_data,
+            transaction_accounts.clone(),
+            instruction_account_metas.clone(),
+            Ok(()),
+            solana_vote_program::vote_processor::Entrypoint::vm,
+            |_invoke_context| {},
+            |_invoke_context| {},
+            &deprecated_feature_set.runtime_features(),
+        );
+    });
+}
+
 fn bench_process_vote_instruction(
     bencher: &mut Bencher,
     transaction_accounts: Vec<TransactionAccount>,
@@ -135,7 +161,7 @@ fn bench_process_vote(bencher: &mut Bencher) {
     );
     let instruction_data = bincode::serialize(&VoteInstruction::Vote(vote)).unwrap();
 
-    bench_process_vote_instruction(
+    bench_process_deprecated_vote_instruction(
         bencher,
         transaction_accounts,
         instruction_account_metas,
@@ -164,6 +190,36 @@ fn bench_process_vote_state_update(bencher: &mut Bencher) {
     vote_state_update.hash = last_vote_hash;
     let instruction_data =
         bincode::serialize(&VoteInstruction::UpdateVoteState(vote_state_update)).unwrap();
+
+    bench_process_deprecated_vote_instruction(
+        bencher,
+        transaction_accounts,
+        instruction_account_metas,
+        instruction_data,
+    );
+}
+
+#[bench]
+fn bench_process_tower_sync(bencher: &mut Bencher) {
+    let (num_initial_votes, slot_hashes, transaction_accounts, instruction_account_metas) =
+        create_accounts();
+
+    let num_vote_slots = MAX_LOCKOUT_HISTORY as Slot;
+    let last_vote_slot = num_initial_votes
+        .saturating_add(num_vote_slots)
+        .saturating_sub(1);
+    let last_vote_hash = slot_hashes
+        .iter()
+        .find(|(slot, _hash)| *slot == last_vote_slot)
+        .unwrap()
+        .1;
+    let slots_and_lockouts: Vec<(Slot, u32)> =
+        ((num_initial_votes.saturating_add(1)..=last_vote_slot).zip((1u32..=31).rev())).collect();
+    let mut tower_sync = TowerSync::from(slots_and_lockouts);
+    tower_sync.root = Some(num_initial_votes);
+    tower_sync.hash = last_vote_hash;
+    tower_sync.block_id = Hash::new_unique();
+    let instruction_data = bincode::serialize(&VoteInstruction::TowerSync(tower_sync)).unwrap();
 
     bench_process_vote_instruction(
         bencher,

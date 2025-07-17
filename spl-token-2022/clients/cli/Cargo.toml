@@ -1,0 +1,61 @@
+[package]
+name = "spl-token-cli"
+version = "5.3.0"
+description = "SPL-Token Command-line Utility"
+documentation = "https://docs.rs/spl-token-cli"
+readme = "README.md"
+authors = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+edition = { workspace = true }
+
+[build-dependencies]
+walkdir = "2"
+
+[dependencies]
+base64 = "0.22.1"
+clap = "3.2.23"
+console = "0.16.0"
+futures = "0.3"
+serde = "1.0.219"
+serde_derive = "1.0.103"
+serde_json = "1.0.140"
+solana-account-decoder = "2.3.4"
+solana-clap-v3-utils = "2.3.4"
+solana-cli-config = "2.3.4"
+solana-cli-output = "2.3.4"
+solana-client = "2.3.4"
+solana-logger = "2.2.0"
+solana-remote-wallet = "2.3.4"
+solana-sdk = "2.2.1"
+solana-system-interface = "1"
+solana-transaction-status = "2.3.4"
+spl-associated-token-account-client = { version = "2.0.0" }
+spl-token = { version = "8.0", features = ["no-entrypoint"] }
+spl-token-2022 = { version = "9.0.0", path = "../../program", features = ["no-entrypoint"] }
+spl-token-client = { version = "0.16.1", path = "../rust-legacy" }
+spl-token-confidential-transfer-proof-generation = { version = "0.4.0", path = "../../confidential-transfer/proof-generation" }
+spl-token-metadata-interface = { version = "0.7.0" }
+spl-token-group-interface = { version = "0.6.0" }
+spl-memo = { version = "6.0", features = ["no-entrypoint"] }
+strum = "0.27"
+strum_macros = "0.27"
+tokio = "1.46"
+
+[dev-dependencies]
+solana-sdk-ids = "2.2.1"
+solana-test-validator = "2.3.4"
+assert_cmd = "2.0.17"
+libtest-mimic = "0.8"
+serial_test = "3.2.0"
+tempfile = "3.20.0"
+
+[[bin]]
+name = "spl-token"
+path = "src/main.rs"
+
+[[test]]
+name = "command"
+path = "tests/command.rs"
+harness = false

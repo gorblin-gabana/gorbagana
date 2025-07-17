@@ -1,25 +1,24 @@
 use {
     crate::cli_output::CliSignatureVerificationStatus,
+    agave_reserved_account_keys::ReservedAccountKeys,
     base64::{prelude::BASE64_STANDARD, Engine},
-    chrono::{DateTime, Local, NaiveDateTime, SecondsFormat, TimeZone, Utc},
+    chrono::{DateTime, Local, SecondsFormat, TimeZone, Utc},
     console::style,
     indicatif::{ProgressBar, ProgressStyle},
+    solana_bincode::limited_deserialize,
     solana_cli_config::SettingType,
-    solana_sdk::{
-        clock::UnixTimestamp,
-        hash::Hash,
-        instruction::CompiledInstruction,
-        message::v0::MessageAddressTableLookup,
-        native_token::lamports_to_sol,
-        program_utils::limited_deserialize,
-        pubkey::Pubkey,
-        signature::Signature,
-        stake,
-        transaction::{TransactionError, TransactionVersion, VersionedTransaction},
-    },
+    solana_clock::UnixTimestamp,
+    solana_hash::Hash,
+    solana_message::{compiled_instruction::CompiledInstruction, v0::MessageAddressTableLookup},
+    solana_native_token::lamports_to_sol,
+    solana_pubkey::Pubkey,
+    solana_signature::Signature,
+    solana_stake_interface as stake,
+    solana_transaction::versioned::{TransactionVersion, VersionedTransaction},
     solana_transaction_status::{
         Rewards, UiReturnDataEncoding, UiTransactionReturnData, UiTransactionStatusMeta,
     },
+    solana_transaction_status_client_types::UiTransactionError,
     spl_memo::{id as spl_memo_id, v1::id as spl_memo_v1_id},
     std::{collections::HashMap, fmt, io, time::Duration},
 };
@@ -217,24 +216,21 @@ fn write_transaction<W: io::Write>(
     write_recent_blockhash(w, message.recent_blockhash(), prefix)?;
     write_signatures(w, &transaction.signatures, sigverify_status, prefix)?;
 
-    let mut fee_payer_index = None;
+    let reserved_account_keys = ReservedAccountKeys::new_all_activated().active;
     for (account_index, account) in account_keys.iter().enumerate() {
-        if fee_payer_index.is_none() && message.is_non_loader_key(account_index) {
-            fee_payer_index = Some(account_index)
-        }
-
         let account_meta = CliAccountMeta {
             is_signer: message.is_signer(account_index),
-            is_writable: message.is_maybe_writable(account_index),
+            is_writable: message.is_maybe_writable(account_index, Some(&reserved_account_keys)),
             is_invoked: message.is_invoked(account_index),
         };
 
+        let is_fee_payer = account_index == 0;
         write_account(
             w,
             account_index,
             *account,
             format_account_mode(account_meta),
-            Some(account_index) == fee_payer_index,
+            is_fee_payer,
             prefix,
         )?;
     }
@@ -442,24 +438,29 @@ fn write_instruction<'a, W: io::Write>(
     let mut raw = true;
     if let AccountKeyType::Known(program_pubkey) = program_pubkey {
         if program_pubkey == &solana_vote_program::id() {
-            if let Ok(vote_instruction) = limited_deserialize::<
-                solana_vote_program::vote_instruction::VoteInstruction,
-            >(&instruction.data)
+            if let Ok(vote_instruction) =
+                limited_deserialize::<solana_vote_program::vote_instruction::VoteInstruction>(
+                    &instruction.data,
+                    solana_packet::PACKET_DATA_SIZE as u64,
+                )
             {
                 writeln!(w, "{prefix}  {vote_instruction:?}")?;
                 raw = false;
             }
         } else if program_pubkey == &stake::program::id() {
-            if let Ok(stake_instruction) =
-                limited_deserialize::<stake::instruction::StakeInstruction>(&instruction.data)
-            {
+            if let Ok(stake_instruction) = limited_deserialize::<stake::instruction::StakeInstruction>(
+                &instruction.data,
+                solana_packet::PACKET_DATA_SIZE as u64,
+            ) {
                 writeln!(w, "{prefix}  {stake_instruction:?}")?;
                 raw = false;
             }
-        } else if program_pubkey == &solana_sdk::system_program::id() {
-            if let Ok(system_instruction) = limited_deserialize::<
-                solana_sdk::system_instruction::SystemInstruction,
-            >(&instruction.data)
+        } else if program_pubkey == &solana_sdk_ids::system_program::id() {
+            if let Ok(system_instruction) =
+                limited_deserialize::<solana_system_interface::instruction::SystemInstruction>(
+                    &instruction.data,
+                    solana_packet::PACKET_DATA_SIZE as u64,
+                )
             {
                 writeln!(w, "{prefix}  {system_instruction:?}")?;
                 raw = false;
@@ -540,7 +541,7 @@ fn write_rewards<W: io::Write>(
 
 fn write_status<W: io::Write>(
     w: &mut W,
-    transaction_status: &Result<(), TransactionError>,
+    transaction_status: &Result<(), UiTransactionError>,
     prefix: &str,
 ) -> io::Result<()> {
     writeln!(
@@ -604,10 +605,7 @@ fn write_return_data<W: io::Write>(
         let (data, encoding) = &return_data.data;
         let raw_return_data = match encoding {
             UiReturnDataEncoding::Base64 => BASE64_STANDARD.decode(data).map_err(|err| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("could not parse data as {encoding:?}: {err:?}"),
-                )
+                io::Error::other(format!("could not parse data as {encoding:?}: {err:?}"))
             })?,
         };
         if !raw_return_data.is_empty() {
@@ -716,7 +714,7 @@ pub fn new_spinner_progress_bar() -> ProgressBar {
 
 pub fn unix_timestamp_to_string(unix_timestamp: UnixTimestamp) -> String {
     match DateTime::from_timestamp(unix_timestamp, 0) {
-        Some(dt) => dt.to_rfc3339_opts(SecondsFormat::Secs, true),
+        Some(ndt) => ndt.to_rfc3339_opts(SecondsFormat::Secs, true),
         None => format!("UnixTimestamp {unix_timestamp}"),
     }
 }
@@ -725,16 +723,15 @@ pub fn unix_timestamp_to_string(unix_timestamp: UnixTimestamp) -> String {
 mod test {
     use {
         super::*,
-        solana_sdk::{
-            message::{
-                v0::{self, LoadedAddresses},
-                Message as LegacyMessage, MessageHeader, VersionedMessage,
-            },
-            pubkey::Pubkey,
-            signature::{Keypair, Signer},
-            transaction::Transaction,
-            transaction_context::TransactionReturnData,
+        solana_keypair::Keypair,
+        solana_message::{
+            v0::{self, LoadedAddresses},
+            Message as LegacyMessage, MessageHeader, VersionedMessage,
         },
+        solana_pubkey::Pubkey,
+        solana_signer::Signer,
+        solana_transaction::Transaction,
+        solana_transaction_context::TransactionReturnData,
         solana_transaction_status::{Reward, RewardType, TransactionStatusMeta},
         std::io::BufWriter,
     };
@@ -817,6 +814,7 @@ mod test {
                 data: vec![1, 2, 3],
             }),
             compute_units_consumed: Some(1234u64),
+            cost_units: Some(5678),
         };
 
         let output = {
@@ -896,6 +894,7 @@ Rewards:
                 data: vec![1, 2, 3],
             }),
             compute_units_consumed: Some(2345u64),
+            cost_units: Some(5678),
         };
 
         let output = {
@@ -973,5 +972,10 @@ Rewards:
             &format_labeled_address(&pubkey, &address_labels),
             "abcdefghijklmnopqrstuvwxyz12345 (1111..1111)"
         );
+    }
+
+    #[test]
+    fn test_unix_timestamp_to_string() {
+        assert_eq!(unix_timestamp_to_string(1628633791), "2021-08-10T22:16:31Z");
     }
 }

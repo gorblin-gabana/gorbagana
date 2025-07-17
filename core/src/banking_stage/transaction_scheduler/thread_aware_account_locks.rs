@@ -1,7 +1,8 @@
 use {
-    solana_sdk::pubkey::Pubkey,
+    ahash::AHashMap,
+    solana_pubkey::Pubkey,
     std::{
-        collections::{hash_map::Entry, HashMap},
+        collections::hash_map::Entry,
         fmt::{Debug, Display},
         ops::{BitAnd, BitAndAssign, Sub},
     },
@@ -28,6 +29,26 @@ struct AccountReadLocks {
     lock_counts: [LockCount; MAX_THREADS],
 }
 
+/// Account locks.
+/// Write Locks - only one thread can hold a write lock at a time.
+///     Contains how many write locks are held by the thread.
+/// Read Locks - multiple threads can hold a read lock at a time.
+///     Contains thread-set for easily checking which threads are scheduled.
+#[derive(Default)]
+struct AccountLocks {
+    pub write_locks: Option<AccountWriteLocks>,
+    pub read_locks: Option<AccountReadLocks>,
+}
+
+/// `try_lock_accounts` may fail for different reasons:
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum TryLockError {
+    /// Outstanding conflicts with multiple threads.
+    MultipleConflicts,
+    /// Outstanding conflict (if any) not in `allowed_threads`.
+    ThreadNotAllowed,
+}
+
 /// Thread-aware account locks which allows for scheduling on threads
 /// that already hold locks on the account. This is useful for allowing
 /// queued transactions to be scheduled on a thread while the transaction
@@ -35,13 +56,9 @@ struct AccountReadLocks {
 pub(crate) struct ThreadAwareAccountLocks {
     /// Number of threads.
     num_threads: usize, // 0..MAX_THREADS
-    /// Write locks - only one thread can hold a write lock at a time.
-    /// Contains how many write locks are held by the thread.
-    write_locks: HashMap<Pubkey, AccountWriteLocks>,
-    /// Read locks - multiple threads can hold a read lock at a time.
-    /// Contains thread-set for easily checking which threads are scheduled.
-    /// Contains how many read locks are held by each thread.
-    read_locks: HashMap<Pubkey, AccountReadLocks>,
+    /// Locks for each account. An account should only have an entry if there
+    /// is at least one lock.
+    locks: AHashMap<Pubkey, AccountLocks>,
 }
 
 impl ThreadAwareAccountLocks {
@@ -55,8 +72,7 @@ impl ThreadAwareAccountLocks {
 
         Self {
             num_threads,
-            write_locks: HashMap::new(),
-            read_locks: HashMap::new(),
+            locks: AHashMap::new(),
         }
     }
 
@@ -73,16 +89,18 @@ impl ThreadAwareAccountLocks {
         read_account_locks: impl Iterator<Item = &'a Pubkey> + Clone,
         allowed_threads: ThreadSet,
         thread_selector: impl FnOnce(ThreadSet) -> ThreadId,
-    ) -> Option<ThreadId> {
-        let schedulable_threads = self.accounts_schedulable_threads(
-            write_account_locks.clone(),
-            read_account_locks.clone(),
-        )? & allowed_threads;
-        (!schedulable_threads.is_empty()).then(|| {
-            let thread_id = thread_selector(schedulable_threads);
-            self.lock_accounts(write_account_locks, read_account_locks, thread_id);
-            thread_id
-        })
+    ) -> Result<ThreadId, TryLockError> {
+        let schedulable_threads = self
+            .accounts_schedulable_threads(write_account_locks.clone(), read_account_locks.clone())
+            .ok_or(TryLockError::MultipleConflicts)?;
+        let schedulable_threads = schedulable_threads & allowed_threads;
+        if schedulable_threads.is_empty() {
+            return Err(TryLockError::ThreadNotAllowed);
+        }
+
+        let thread_id = thread_selector(schedulable_threads);
+        self.lock_accounts(write_account_locks, read_account_locks, thread_id);
+        Ok(thread_id)
     }
 
     /// Unlocks the accounts for the given thread.
@@ -144,9 +162,12 @@ impl ThreadAwareAccountLocks {
     ///   holds all read locks. Otherwise, no threads are write-schedulable.
     /// If only read-locked, all threads are read-schedulable.
     fn schedulable_threads<const WRITE: bool>(&self, account: &Pubkey) -> ThreadSet {
-        match (self.write_locks.get(account), self.read_locks.get(account)) {
-            (None, None) => ThreadSet::any(self.num_threads),
-            (None, Some(read_locks)) => {
+        match self.locks.get(account) {
+            None => ThreadSet::any(self.num_threads),
+            Some(AccountLocks {
+                write_locks: None,
+                read_locks: Some(read_locks),
+            }) => {
                 if WRITE {
                     read_locks
                         .thread_set
@@ -157,14 +178,24 @@ impl ThreadAwareAccountLocks {
                     ThreadSet::any(self.num_threads)
                 }
             }
-            (Some(write_locks), None) => ThreadSet::only(write_locks.thread_id),
-            (Some(write_locks), Some(read_locks)) => {
+            Some(AccountLocks {
+                write_locks: Some(write_locks),
+                read_locks: None,
+            }) => ThreadSet::only(write_locks.thread_id),
+            Some(AccountLocks {
+                write_locks: Some(write_locks),
+                read_locks: Some(read_locks),
+            }) => {
                 assert_eq!(
                     read_locks.thread_set.only_one_contained(),
                     Some(write_locks.thread_id)
                 );
                 read_locks.thread_set
             }
+            Some(AccountLocks {
+                write_locks: None,
+                read_locks: None,
+            }) => unreachable!(),
         }
     }
 
@@ -191,57 +222,61 @@ impl ThreadAwareAccountLocks {
     /// Locks the given `account` for writing on `thread_id`.
     /// Panics if the account is already locked for writing on another thread.
     fn write_lock_account(&mut self, account: &Pubkey, thread_id: ThreadId) {
-        match self.write_locks.entry(*account) {
-            Entry::Occupied(mut entry) => {
-                let AccountWriteLocks {
-                    thread_id: lock_thread_id,
-                    lock_count,
-                } = entry.get_mut();
-                assert_eq!(
-                    *lock_thread_id, thread_id,
-                    "outstanding write lock must be on same thread"
-                );
+        let entry = self.locks.entry(*account).or_default();
 
-                *lock_count += 1;
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(AccountWriteLocks {
-                    thread_id,
-                    lock_count: 1,
-                });
-            }
-        }
+        let AccountLocks {
+            write_locks,
+            read_locks,
+        } = entry;
 
-        // Check for outstanding read-locks
-        if let Some(read_locks) = self.read_locks.get(account) {
+        if let Some(read_locks) = read_locks {
             assert_eq!(
-                read_locks.thread_set,
-                ThreadSet::only(thread_id),
+                read_locks.thread_set.only_one_contained(),
+                Some(thread_id),
                 "outstanding read lock must be on same thread"
             );
+        }
+
+        if let Some(write_locks) = write_locks {
+            assert_eq!(
+                write_locks.thread_id, thread_id,
+                "outstanding write lock must be on same thread"
+            );
+            write_locks.lock_count += 1;
+        } else {
+            *write_locks = Some(AccountWriteLocks {
+                thread_id,
+                lock_count: 1,
+            });
         }
     }
 
     /// Unlocks the given `account` for writing on `thread_id`.
     /// Panics if the account is not locked for writing on `thread_id`.
     fn write_unlock_account(&mut self, account: &Pubkey, thread_id: ThreadId) {
-        match self.write_locks.entry(*account) {
-            Entry::Occupied(mut entry) => {
-                let AccountWriteLocks {
-                    thread_id: lock_thread_id,
-                    lock_count,
-                } = entry.get_mut();
-                assert_eq!(
-                    *lock_thread_id, thread_id,
-                    "outstanding write lock must be on same thread"
-                );
-                *lock_count -= 1;
-                if *lock_count == 0 {
-                    entry.remove();
-                }
-            }
-            Entry::Vacant(_) => {
-                panic!("write lock must exist for account: {account}");
+        let Entry::Occupied(mut entry) = self.locks.entry(*account) else {
+            panic!("write lock must exist for account: {account}");
+        };
+
+        let AccountLocks {
+            write_locks: maybe_write_locks,
+            read_locks,
+        } = entry.get_mut();
+
+        let Some(write_locks) = maybe_write_locks else {
+            panic!("write lock must exist for account: {account}");
+        };
+
+        assert_eq!(
+            write_locks.thread_id, thread_id,
+            "outstanding write lock must be on same thread"
+        );
+
+        write_locks.lock_count -= 1;
+        if write_locks.lock_count == 0 {
+            *maybe_write_locks = None;
+            if read_locks.is_none() {
+                entry.remove();
             }
         }
     }
@@ -249,57 +284,63 @@ impl ThreadAwareAccountLocks {
     /// Locks the given `account` for reading on `thread_id`.
     /// Panics if the account is already locked for writing on another thread.
     fn read_lock_account(&mut self, account: &Pubkey, thread_id: ThreadId) {
-        match self.read_locks.entry(*account) {
-            Entry::Occupied(mut entry) => {
-                let AccountReadLocks {
-                    thread_set,
-                    lock_counts,
-                } = entry.get_mut();
-                thread_set.insert(thread_id);
-                lock_counts[thread_id] += 1;
-            }
-            Entry::Vacant(entry) => {
-                let mut lock_counts = [0; MAX_THREADS];
-                lock_counts[thread_id] = 1;
-                entry.insert(AccountReadLocks {
-                    thread_set: ThreadSet::only(thread_id),
-                    lock_counts,
-                });
-            }
-        }
+        let AccountLocks {
+            write_locks,
+            read_locks,
+        } = self.locks.entry(*account).or_default();
 
-        // Check for outstanding write-locks
-        if let Some(write_locks) = self.write_locks.get(account) {
+        if let Some(write_locks) = write_locks {
             assert_eq!(
                 write_locks.thread_id, thread_id,
                 "outstanding write lock must be on same thread"
             );
+        }
+
+        match read_locks {
+            Some(read_locks) => {
+                read_locks.thread_set.insert(thread_id);
+                read_locks.lock_counts[thread_id] += 1;
+            }
+            None => {
+                let mut lock_counts = [0; MAX_THREADS];
+                lock_counts[thread_id] = 1;
+                *read_locks = Some(AccountReadLocks {
+                    thread_set: ThreadSet::only(thread_id),
+                    lock_counts,
+                });
+            }
         }
     }
 
     /// Unlocks the given `account` for reading on `thread_id`.
     /// Panics if the account is not locked for reading on `thread_id`.
     fn read_unlock_account(&mut self, account: &Pubkey, thread_id: ThreadId) {
-        match self.read_locks.entry(*account) {
-            Entry::Occupied(mut entry) => {
-                let AccountReadLocks {
-                    thread_set,
-                    lock_counts,
-                } = entry.get_mut();
-                assert!(
-                    thread_set.contains(thread_id),
-                    "outstanding read lock must be on same thread"
-                );
-                lock_counts[thread_id] -= 1;
-                if lock_counts[thread_id] == 0 {
-                    thread_set.remove(thread_id);
-                    if thread_set.is_empty() {
-                        entry.remove();
-                    }
+        let Entry::Occupied(mut entry) = self.locks.entry(*account) else {
+            panic!("read lock must exist for account: {account}");
+        };
+
+        let AccountLocks {
+            write_locks,
+            read_locks: maybe_read_locks,
+        } = entry.get_mut();
+
+        let Some(read_locks) = maybe_read_locks else {
+            panic!("read lock must exist for account: {account}");
+        };
+
+        assert!(
+            read_locks.thread_set.contains(thread_id),
+            "outstanding read lock must be on same thread"
+        );
+
+        read_locks.lock_counts[thread_id] -= 1;
+        if read_locks.lock_counts[thread_id] == 0 {
+            read_locks.thread_set.remove(thread_id);
+            if read_locks.thread_set.is_empty() {
+                *maybe_read_locks = None;
+                if write_locks.is_none() {
+                    entry.remove();
                 }
-            }
-            Entry::Vacant(_) => {
-                panic!("read lock must exist for account: {account}");
             }
         }
     }
@@ -391,12 +432,36 @@ impl ThreadSet {
 
     #[inline(always)]
     pub(crate) fn contained_threads_iter(self) -> impl Iterator<Item = ThreadId> {
-        (0..MAX_THREADS).filter(move |thread_id| self.contains(*thread_id))
+        ThreadSetIterator(self.0)
     }
 
     #[inline(always)]
     const fn as_flag(thread_id: ThreadId) -> u64 {
         0b1 << thread_id
+    }
+}
+
+struct ThreadSetIterator(u64);
+
+impl Iterator for ThreadSetIterator {
+    type Item = ThreadId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0 == 0 {
+            None
+        } else {
+            // Find the first set bit by counting trailing zeros.
+            // This is guaranteed to be < 64 because self.0 != 0.
+            let thread_id = self.0.trailing_zeros() as ThreadId;
+            // Clear the lowest set bit. The subtraction is safe because
+            // we know that self.0 != 0.
+            // Example (with 4 bits):
+            //  self.0 = 0b1010           // initial value
+            //  self.0 - 1 = 0b1001       // all bits at or after the lowest set bit are flipped
+            //  0b1010 & 0b1001 = 0b1000  // the lowest bit has been cleared
+            self.0 &= self.0 - 1;
+            Some(thread_id)
+        }
     }
 }
 
@@ -438,7 +503,7 @@ mod tests {
                 TEST_ANY_THREADS,
                 test_thread_selector
             ),
-            None
+            Err(TryLockError::MultipleConflicts)
         );
     }
 
@@ -456,7 +521,25 @@ mod tests {
                 TEST_ANY_THREADS,
                 test_thread_selector
             ),
-            Some(3)
+            Ok(3)
+        );
+    }
+
+    #[test]
+    fn test_try_lock_accounts_one_not_allowed() {
+        let pk1 = Pubkey::new_unique();
+        let pk2 = Pubkey::new_unique();
+        let mut locks = ThreadAwareAccountLocks::new(TEST_NUM_THREADS);
+        locks.write_lock_account(&pk2, 3);
+
+        assert_eq!(
+            locks.try_lock_accounts(
+                [&pk1].into_iter(),
+                [&pk2].into_iter(),
+                ThreadSet::none(),
+                test_thread_selector
+            ),
+            Err(TryLockError::ThreadNotAllowed)
         );
     }
 
@@ -475,7 +558,7 @@ mod tests {
                 TEST_ANY_THREADS - ThreadSet::only(0), // exclude 0
                 test_thread_selector
             ),
-            Some(1)
+            Ok(1)
         );
     }
 
@@ -491,7 +574,7 @@ mod tests {
                 TEST_ANY_THREADS,
                 test_thread_selector
             ),
-            Some(0)
+            Ok(0)
         );
     }
 
@@ -641,7 +724,7 @@ mod tests {
         locks.write_lock_account(&pk1, 1);
         locks.write_unlock_account(&pk1, 1);
         locks.write_unlock_account(&pk1, 1);
-        assert!(locks.write_locks.is_empty());
+        assert!(locks.locks.is_empty());
     }
 
     #[test]
@@ -652,7 +735,7 @@ mod tests {
         locks.read_lock_account(&pk1, 1);
         locks.read_unlock_account(&pk1, 1);
         locks.read_unlock_account(&pk1, 1);
-        assert!(locks.read_locks.is_empty());
+        assert!(locks.locks.is_empty());
     }
 
     #[test]
@@ -708,5 +791,40 @@ mod tests {
     fn test_thread_set_any_max() {
         let any_threads = ThreadSet::any(MAX_THREADS);
         assert_eq!(any_threads.num_threads(), MAX_THREADS as u32);
+    }
+
+    #[test]
+    fn test_thread_set_iter() {
+        let mut thread_set = ThreadSet::none();
+        assert!(thread_set.contained_threads_iter().next().is_none());
+
+        thread_set.insert(4);
+        assert_eq!(
+            thread_set.contained_threads_iter().collect::<Vec<_>>(),
+            vec![4]
+        );
+
+        thread_set.insert(5);
+        assert_eq!(
+            thread_set.contained_threads_iter().collect::<Vec<_>>(),
+            vec![4, 5]
+        );
+        thread_set.insert(63);
+        assert_eq!(
+            thread_set.contained_threads_iter().collect::<Vec<_>>(),
+            vec![4, 5, 63]
+        );
+
+        thread_set.remove(5);
+        assert_eq!(
+            thread_set.contained_threads_iter().collect::<Vec<_>>(),
+            vec![4, 63]
+        );
+
+        let thread_set = ThreadSet::any(64);
+        assert_eq!(
+            thread_set.contained_threads_iter().collect::<Vec<_>>(),
+            (0..64).collect::<Vec<_>>()
+        );
     }
 }

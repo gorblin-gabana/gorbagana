@@ -1,7 +1,7 @@
 use {
     crate::{input_parsers::signer::PubkeySignature, ArgConstant},
-    clap::{value_parser, Arg, Command},
-    solana_sdk::hash::Hash,
+    clap::{value_parser, Arg, ArgAction, Command},
+    solana_hash::Hash,
 };
 
 pub const BLOCKHASH_ARG: ArgConstant<'static> = ArgConstant {
@@ -28,51 +28,54 @@ pub const DUMP_TRANSACTION_MESSAGE: ArgConstant<'static> = ArgConstant {
     help: "Display the base64 encoded binary transaction message in sign-only mode",
 };
 
-pub fn blockhash_arg() -> Arg {
+pub fn blockhash_arg<'a>() -> Arg<'a> {
     Arg::new(BLOCKHASH_ARG.name)
         .long(BLOCKHASH_ARG.long)
+        .takes_value(true)
         .value_name("BLOCKHASH")
         .value_parser(value_parser!(Hash))
         .help(BLOCKHASH_ARG.help)
 }
 
-pub fn sign_only_arg() -> Arg {
+pub fn sign_only_arg<'a>() -> Arg<'a> {
     Arg::new(SIGN_ONLY_ARG.name)
         .long(SIGN_ONLY_ARG.long)
-        .action(clap::ArgAction::SetTrue)
+        .takes_value(false)
         .requires(BLOCKHASH_ARG.name)
         .help(SIGN_ONLY_ARG.help)
 }
 
-fn signer_arg() -> Arg {
+fn signer_arg<'a>() -> Arg<'a> {
     Arg::new(SIGNER_ARG.name)
         .long(SIGNER_ARG.long)
+        .takes_value(true)
         .value_name("PUBKEY=SIGNATURE")
         .value_parser(value_parser!(PubkeySignature))
         .requires(BLOCKHASH_ARG.name)
-        .action(clap::ArgAction::Append)
+        .action(ArgAction::Append)
+        .multiple_values(false)
         .help(SIGNER_ARG.help)
 }
 
-pub fn dump_transaction_message() -> Arg {
+pub fn dump_transaction_message<'a>() -> Arg<'a> {
     Arg::new(DUMP_TRANSACTION_MESSAGE.name)
         .long(DUMP_TRANSACTION_MESSAGE.long)
-        .action(clap::ArgAction::SetTrue)
+        .takes_value(false)
         .requires(SIGN_ONLY_ARG.name)
         .help(DUMP_TRANSACTION_MESSAGE.help)
 }
 
 pub trait ArgsConfig {
-    fn blockhash_arg(&self, arg: Arg) -> Arg {
+    fn blockhash_arg<'a>(&self, arg: Arg<'a>) -> Arg<'a> {
         arg
     }
-    fn sign_only_arg(&self, arg: Arg) -> Arg {
+    fn sign_only_arg<'a>(&self, arg: Arg<'a>) -> Arg<'a> {
         arg
     }
-    fn signer_arg(&self, arg: Arg) -> Arg {
+    fn signer_arg<'a>(&self, arg: Arg<'a>) -> Arg<'a> {
         arg
     }
-    fn dump_transaction_message_arg(&self, arg: Arg) -> Arg {
+    fn dump_transaction_message_arg<'a>(&self, arg: Arg<'a>) -> Arg<'a> {
         arg
     }
 }
@@ -82,7 +85,7 @@ pub trait OfflineArgs {
     fn offline_args_config(self, config: &dyn ArgsConfig) -> Self;
 }
 
-impl OfflineArgs for Command {
+impl OfflineArgs for Command<'_> {
     fn offline_args_config(self, config: &dyn ArgsConfig) -> Self {
         self.arg(config.blockhash_arg(blockhash_arg()))
             .arg(config.sign_only_arg(sign_only_arg()))

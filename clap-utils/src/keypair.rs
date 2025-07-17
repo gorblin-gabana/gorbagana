@@ -18,22 +18,23 @@ use {
     bip39::{Language, Mnemonic, Seed},
     clap::ArgMatches,
     rpassword::prompt_password,
+    solana_derivation_path::{DerivationPath, DerivationPathError},
+    solana_hash::Hash,
+    solana_keypair::{
+        keypair_from_seed, keypair_from_seed_phrase_and_passphrase, read_keypair,
+        read_keypair_file, seed_derivable::keypair_from_seed_and_derivation_path, Keypair,
+    },
+    solana_message::Message,
+    solana_presigner::Presigner,
+    solana_pubkey::Pubkey,
     solana_remote_wallet::{
         locator::{Locator as RemoteWalletLocator, LocatorError as RemoteWalletLocatorError},
         remote_keypair::generate_remote_keypair,
         remote_wallet::{maybe_wallet_manager, RemoteWalletError, RemoteWalletManager},
     },
-    solana_sdk::{
-        derivation_path::{DerivationPath, DerivationPathError},
-        hash::Hash,
-        message::Message,
-        pubkey::Pubkey,
-        signature::{
-            generate_seed_from_seed_phrase_and_passphrase, keypair_from_seed,
-            keypair_from_seed_and_derivation_path, keypair_from_seed_phrase_and_passphrase,
-            read_keypair, read_keypair_file, Keypair, NullSigner, Presigner, Signature, Signer,
-        },
-    },
+    solana_seed_phrase::generate_seed_from_seed_phrase_and_passphrase,
+    solana_signature::Signature,
+    solana_signer::{null_signer::NullSigner, Signer},
     std::{
         cell::RefCell,
         convert::TryFrom,
@@ -174,13 +175,10 @@ impl DefaultSigner {
                     }
                 })
                 .map_err(|_| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!(
+                    std::io::Error::other(format!(
                         "No default signer found, run \"solana-keygen new -o {}\" to create a new one",
                         self.path
-                    ),
-                    )
+                    ))
                 })?;
             *self.is_path_checked.borrow_mut() = true;
         }
@@ -207,7 +205,7 @@ impl DefaultSigner {
     /// use clap::{App, Arg, value_t_or_exit};
     /// use solana_clap_utils::keypair::{DefaultSigner, signer_from_path};
     /// use solana_clap_utils::offline::OfflineArgs;
-    /// use solana_sdk::signer::Signer;
+    /// use solana_signer::Signer;
     ///
     /// let clap_app = App::new("my-program")
     ///     // The argument we'll parse as a signer "path"
@@ -241,7 +239,7 @@ impl DefaultSigner {
     pub fn generate_unique_signers(
         &self,
         bulk_signers: Vec<Option<Box<dyn Signer>>>,
-        matches: &ArgMatches,
+        matches: &ArgMatches<'_>,
         wallet_manager: &mut Option<Rc<RemoteWalletManager>>,
     ) -> Result<CliSignerInfo, Box<dyn error::Error>> {
         let mut unique_signers = vec![];
@@ -567,7 +565,7 @@ pub struct SignerFromPathConfig {
 /// the following schemes are supported:
 ///
 /// - `file:` &mdash; Read the keypair from a JSON keypair file. The path portion
-///    of the URI is the file path.
+///   of the URI is the file path.
 ///
 /// - `stdin:` &mdash; Read the keypair from stdin, in the JSON format used by
 ///   the keypair file.
@@ -764,7 +762,7 @@ pub fn signer_from_path_with_config(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             Ok(Box::new(keypair_from_seed_phrase(
                 keypair_name,
                 skip_validation,
@@ -774,10 +772,9 @@ pub fn signer_from_path_with_config(
             )?))
         }
         SignerSourceKind::Filepath(path) => match read_keypair_file(&path) {
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("could not read keypair file \"{path}\". Run \"solana-keygen new\" to create a keypair file: {e}"),
-            )
+            Err(e) => Err(std::io::Error::other(format!(
+                "could not read keypair file \"{path}\". Run \"solana-keygen new\" to create a keypair file: {e}"
+            ))
             .into()),
             Ok(file) => Ok(Box::new(file)),
         },
@@ -794,7 +791,7 @@ pub fn signer_from_path_with_config(
                     locator,
                     derivation_path.unwrap_or_default(),
                     wallet_manager,
-                    matches.get_flag("confirm_key"),
+                    matches.is_present("confirm_key"),
                     keypair_name,
                 )?))
             } else {
@@ -807,11 +804,10 @@ pub fn signer_from_path_with_config(
                 .and_then(|presigners| presigner_from_pubkey_sigs(&pubkey, presigners));
             if let Some(presigner) = presigner {
                 Ok(Box::new(presigner))
-            } else if config.allow_null_signer || matches.get_flag(SIGN_ONLY_ARG.name) {
+            } else if config.allow_null_signer || matches.is_present(SIGN_ONLY_ARG.name) {
                 Ok(Box::new(NullSigner::new(&pubkey)))
             } else {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(std::io::Error::other(
                     format!("missing signature for supplied pubkey: {pubkey}"),
                 )
                 .into())
@@ -883,7 +879,7 @@ pub fn resolve_signer_from_path(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             // This method validates the seed phrase, but returns `None` because there is no path
             // on disk or to a device
             keypair_from_seed_phrase(
@@ -896,13 +892,10 @@ pub fn resolve_signer_from_path(
             .map(|_| None)
         }
         SignerSourceKind::Filepath(path) => match read_keypair_file(&path) {
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "could not read keypair file \"{path}\". \
+            Err(e) => Err(std::io::Error::other(format!(
+                "could not read keypair file \"{path}\". \
                     Run \"solana-keygen new\" to create a keypair file: {e}"
-                ),
-            )
+            ))
             .into()),
             Ok(_) => Ok(Some(path.to_string())),
         },
@@ -921,7 +914,7 @@ pub fn resolve_signer_from_path(
                     locator,
                     derivation_path.unwrap_or_default(),
                     wallet_manager,
-                    matches.get_flag("confirm_key"),
+                    matches.is_present("confirm_key"),
                     keypair_name,
                 )
                 .map(|keypair| keypair.path)?;
@@ -1008,7 +1001,7 @@ pub fn keypair_from_path(
     } = parse_signer_source(path)?;
     match kind {
         SignerSourceKind::Prompt => {
-            let skip_validation = matches.get_flag(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
+            let skip_validation = matches.is_present(SKIP_SEED_PHRASE_VALIDATION_ARG.name);
             Ok(keypair_from_seed_phrase(
                 keypair_name,
                 skip_validation,
@@ -1018,13 +1011,10 @@ pub fn keypair_from_path(
             )?)
         }
         SignerSourceKind::Filepath(path) => match read_keypair_file(&path) {
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "could not read keypair file \"{path}\". \
+            Err(e) => Err(std::io::Error::other(format!(
+                "could not read keypair file \"{path}\". \
                     Run \"solana-keygen new\" to create a keypair file: {e}"
-                ),
-            )
+            ))
             .into()),
             Ok(file) => Ok(file),
         },
@@ -1032,10 +1022,9 @@ pub fn keypair_from_path(
             let mut stdin = std::io::stdin();
             Ok(read_keypair(&mut stdin)?)
         }
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("signer of type `{kind:?}` does not support Keypair output"),
-        )
+        _ => Err(std::io::Error::other(format!(
+            "signer of type `{kind:?}` does not support Keypair output"
+        ))
         .into()),
     }
 }
@@ -1123,8 +1112,9 @@ mod tests {
         crate::offline::OfflineArgs,
         assert_matches::assert_matches,
         clap::{value_t_or_exit, App, Arg},
+        solana_keypair::write_keypair_file,
         solana_remote_wallet::{locator::Manufacturer, remote_wallet::initialize_wallet_manager},
-        solana_sdk::{signer::keypair::write_keypair_file, system_instruction},
+        solana_system_interface::instruction::transfer,
         tempfile::{NamedTempFile, TempDir},
     };
 
@@ -1145,11 +1135,7 @@ mod tests {
         let nonsigner2 = Keypair::new();
         let recipient = Pubkey::new_unique();
         let message = Message::new(
-            &[system_instruction::transfer(
-                &source.pubkey(),
-                &recipient,
-                42,
-            )],
+            &[transfer(&source.pubkey(), &recipient, 42)],
             Some(&fee_payer.pubkey()),
         );
         let signers = vec![

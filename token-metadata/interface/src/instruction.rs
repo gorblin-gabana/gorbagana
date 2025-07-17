@@ -5,11 +5,9 @@ use serde::{Deserialize, Serialize};
 use {
     crate::state::Field,
     borsh::{BorshDeserialize, BorshSerialize},
-    solana_program::{
-        instruction::{AccountMeta, Instruction},
-        program_error::ProgramError,
-        pubkey::Pubkey,
-    },
+    solana_instruction::{AccountMeta, Instruction},
+    solana_program_error::ProgramError,
+    solana_pubkey::Pubkey,
     spl_discriminator::{discriminator::ArrayDiscriminator, SplDiscriminate},
     spl_pod::optional_keys::OptionalNonZeroPubkey,
 };
@@ -102,12 +100,11 @@ pub enum TokenMetadataInstruction {
     /// totally new field denoted by a "key" string.
     ///
     /// By the end of the instruction, the metadata account must be properly
-    /// resized based on the new size of the TLV entry.
+    /// re-sized based on the new size of the TLV entry.
     ///   * If the new size is larger, the program must first reallocate to
-    ///     avoid
-    ///   overwriting other TLV entries.
+    ///     avoid overwriting other TLV entries.
     ///   * If the new size is smaller, the program must reallocate at the end
-    ///   so that it's possible to iterate over TLV entries
+    ///     so that it's possible to iterate over TLV entries
     ///
     /// Accounts expected by this instruction:
     ///
@@ -125,7 +122,7 @@ pub enum TokenMetadataInstruction {
     /// URI fields.
     ///
     /// By the end of the instruction, the metadata account must be properly
-    /// resized at the end based on the new size of the TLV entry.
+    /// re-sized at the end based on the new size of the TLV entry.
     ///
     /// Accounts expected by this instruction:
     ///
@@ -163,7 +160,7 @@ pub enum TokenMetadataInstruction {
 }
 impl TokenMetadataInstruction {
     /// Unpacks a byte buffer into a
-    /// [TokenMetadataInstruction](enum.TokenMetadataInstruction.html).
+    /// [`TokenMetadataInstruction`](enum.TokenMetadataInstruction.html).
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         if input.len() < ArrayDiscriminator::LENGTH {
             return Err(ProgramError::InvalidInstructionData);
@@ -194,8 +191,8 @@ impl TokenMetadataInstruction {
         })
     }
 
-    /// Packs a [TokenInstruction](enum.TokenInstruction.html) into a byte
-    /// buffer.
+    /// Packs a [`TokenMetadataInstruction`](enum.TokenMetadataInstruction.html)
+    /// into a byte buffer.
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = vec![];
         match self {
@@ -324,7 +321,7 @@ pub fn emit(
 mod test {
     #[cfg(feature = "serde-traits")]
     use std::str::FromStr;
-    use {super::*, crate::NAMESPACE, solana_program::hash};
+    use {super::*, crate::NAMESPACE, solana_sha256_hasher::hashv};
 
     fn check_pack_unpack<T: BorshSerialize>(
         instruction: TokenMetadataInstruction,
@@ -351,7 +348,7 @@ mod test {
             uri: uri.to_string(),
         };
         let check = TokenMetadataInstruction::Initialize(data.clone());
-        let preimage = hash::hashv(&[format!("{NAMESPACE}:initialize_account").as_bytes()]);
+        let preimage = hashv(&[format!("{NAMESPACE}:initialize_account").as_bytes()]);
         let discriminator = &preimage.as_ref()[..ArrayDiscriminator::LENGTH];
         check_pack_unpack(check, discriminator, data);
     }
@@ -365,7 +362,7 @@ mod test {
             value: value.to_string(),
         };
         let check = TokenMetadataInstruction::UpdateField(data.clone());
-        let preimage = hash::hashv(&[format!("{NAMESPACE}:updating_field").as_bytes()]);
+        let preimage = hashv(&[format!("{NAMESPACE}:updating_field").as_bytes()]);
         let discriminator = &preimage.as_ref()[..ArrayDiscriminator::LENGTH];
         check_pack_unpack(check, discriminator, data);
     }
@@ -377,7 +374,7 @@ mod test {
             idempotent: true,
         };
         let check = TokenMetadataInstruction::RemoveKey(data.clone());
-        let preimage = hash::hashv(&[format!("{NAMESPACE}:remove_key_ix").as_bytes()]);
+        let preimage = hashv(&[format!("{NAMESPACE}:remove_key_ix").as_bytes()]);
         let discriminator = &preimage.as_ref()[..ArrayDiscriminator::LENGTH];
         check_pack_unpack(check, discriminator, data);
     }
@@ -388,7 +385,7 @@ mod test {
             new_authority: OptionalNonZeroPubkey::default(),
         };
         let check = TokenMetadataInstruction::UpdateAuthority(data.clone());
-        let preimage = hash::hashv(&[format!("{NAMESPACE}:update_the_authority").as_bytes()]);
+        let preimage = hashv(&[format!("{NAMESPACE}:update_the_authority").as_bytes()]);
         let discriminator = &preimage.as_ref()[..ArrayDiscriminator::LENGTH];
         check_pack_unpack(check, discriminator, data);
     }
@@ -400,7 +397,7 @@ mod test {
             end: Some(10),
         };
         let check = TokenMetadataInstruction::Emit(data.clone());
-        let preimage = hash::hashv(&[format!("{NAMESPACE}:emitter").as_bytes()]);
+        let preimage = hashv(&[format!("{NAMESPACE}:emitter").as_bytes()]);
         let discriminator = &preimage.as_ref()[..ArrayDiscriminator::LENGTH];
         check_pack_unpack(check, discriminator, data);
     }

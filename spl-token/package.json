@@ -1,0 +1,49 @@
+{
+  "private": true,
+  "scripts": {
+    "programs:build": "zx ./scripts/rust/build-sbf.mjs program",
+    "programs:format": "zx ./scripts/rust/format.mjs program",
+    "programs:lint": "zx ./scripts/rust/lint.mjs program",
+    "programs:test": "zx ./scripts/rust/test.mjs program",
+    "solana:check": "zx ./scripts/check-solana-version.mjs",
+    "solana:link": "zx ./scripts/link-solana-version.mjs",
+    "generate": "pnpm generate:clients",
+    "generate:clients": "zx ./scripts/generate-clients.mjs",
+    "validator:start": "zx ./scripts/start-validator.mjs",
+    "validator:restart": "pnpm validator:start --restart",
+    "validator:stop": "zx ./scripts/stop-validator.mjs",
+    "clients:js:format": "zx ./scripts/js/format.mjs",
+    "clients:js:lint": "zx ./scripts/js/lint.mjs",
+    "clients:js:publish": "zx ./scripts/js/publish.mjs",
+    "clients:js:test": "zx ./scripts/js/test.mjs",
+    "clients:rust:format": "zx ./scripts/rust/format.mjs clients/rust",
+    "clients:rust:lint": "zx ./scripts/rust/lint.mjs clients/rust",
+    "clients:rust:test": "zx ./scripts/rust/test.mjs clients/rust",
+    "template:upgrade": "zx ./scripts/upgrade-template.mjs",
+    "rust:spellcheck": "cargo spellcheck --code 1",
+    "rust:audit": "zx ./scripts/rust/audit.mjs",
+    "rust:publish": "zx ./scripts/rust/publish.mjs",
+    "rust:semver": "cargo semver-checks",
+    "p-token:build": "zx ./scripts/rust/build-sbf.mjs p-token",
+    "p-token:format": "zx ./scripts/rust/format.mjs p-token",
+    "p-token:lint": "zx ./scripts/rust/lint.mjs p-token",
+    "p-token:test": "zx ./scripts/rust/test.mjs p-token",
+    "fixtures:clean": "zx ./scripts/rust/fixtures.mjs clean",
+    "fixtures:generate": "zx ./scripts/rust/fixtures.mjs generate",
+    "fixtures:run": "zx ./scripts/rust/fixtures.mjs run",
+    "interface:format": "zx ./scripts/rust/format.mjs interface",
+    "interface:lint": "zx ./scripts/rust/lint.mjs interface"
+  },
+  "devDependencies": {
+    "@codama/renderers-js": "^1.2.7",
+    "@codama/renderers-rust": "^1.0.16",
+    "@iarna/toml": "^2.2.5",
+    "codama": "^1.2.8",
+    "typescript": "^5.5.2",
+    "zx": "^7.2.3"
+  },
+  "engines": {
+    "node": ">=v20.0.0"
+  },
+  "packageManager": "pnpm@9.1.0"
+}

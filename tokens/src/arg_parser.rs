@@ -3,13 +3,11 @@ use {
         Args, BalancesArgs, Command, DistributeTokensArgs, SenderStakeArgs, SplTokenArgs,
         StakeArgs, TransactionLogArgs,
     },
-    clap::{
-        crate_description, crate_name, value_t, value_t_or_exit, App, Arg, ArgMatches, SubCommand,
-    },
+    clap::{Arg, ArgMatches, Command as ClapCommand},
     solana_clap_utils::{
-        input_parsers::{pubkey_of_signer, value_of},
-        input_validators::{is_amount, is_url_or_moniker, is_valid_pubkey, is_valid_signer},
-        keypair::{pubkey_from_path, signer_from_path},
+        input_parsers::{pubkey_of_signer},
+        input_validators::{is_url_or_moniker},
+        keypair::{signer_from_path},
     },
     solana_cli_config::CONFIG_FILE,
     solana_remote_wallet::remote_wallet::maybe_wallet_manager,
@@ -17,631 +15,600 @@ use {
     std::{error::Error, ffi::OsString, process::exit},
 };
 
-fn get_matches<'a, I, T>(args: I) -> ArgMatches<'a>
+fn get_matches<I, T>(args: I) -> ArgMatches
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
     let default_config_file = CONFIG_FILE.as_ref().unwrap();
-    App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    ClapCommand::new("solana-tokens")
+        .about("Solana tokens")
+        .version("2.0.0")
         .arg(
-            Arg::with_name("config_file")
-                .short("C")
+            Arg::new("config_file")
+                .short('C')
                 .long("config")
-                .takes_value(true)
                 .value_name("FILEPATH")
-                .default_value(default_config_file)
+                .default_value(default_config_file.as_str())
                 .help("Config file"),
         )
         .arg(
-            Arg::with_name("json_rpc_url")
-                .short("u")
+            Arg::new("json_rpc_url")
+                .short('u')
                 .long("url")
                 .value_name("URL_OR_MONIKER")
-                .takes_value(true)
                 .global(true)
-                .validator(is_url_or_moniker)
+                .value_parser(|s: &str| is_url_or_moniker(s))
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
                        [mainnet-beta, testnet, devnet, localhost]",
                 ),
         )
         .subcommand(
-            SubCommand::with_name("distribute-tokens")
+            ClapCommand::new("distribute-tokens")
                 .about("Distribute SOL")
                 .arg(
-                    Arg::with_name("db_path")
+                    Arg::new("db_path")
                         .long("db-path")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
                         .help(
-                            "Location for storing distribution database. \
-                            The database is used for tracking transactions as they are finalized \
-                            and preventing double spends.",
+                            "Path to file containing a list of recipients",
                         ),
                 )
                 .arg(
-                    Arg::with_name("input_csv")
+                    Arg::new("input_csv")
                         .long("input-csv")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
                         .help("Input CSV file"),
                 )
                 .arg(
-                    Arg::with_name("transfer_amount")
+                    Arg::new("transfer_amount")
                         .long("transfer-amount")
-                        .takes_value(true)
                         .value_name("AMOUNT")
-                        .validator(is_amount)
-                        .help("The amount to send to each recipient, in SOL"),
+                        .help("The amount to transfer to each recipient, in SOL; accepts keyword ALL"),
                 )
                 .arg(
-                    Arg::with_name("dry_run")
+                    Arg::new("dry_run")
                         .long("dry-run")
+                        .action(clap::ArgAction::SetTrue)
                         .help("Do not execute any transfers"),
                 )
                 .arg(
-                    Arg::with_name("output_path")
+                    Arg::new("output_path")
                         .long("output-path")
-                        .short("o")
                         .value_name("FILE")
-                        .takes_value(true)
                         .help("Write the transaction log to this file"),
                 )
                 .arg(
-                    Arg::with_name("sender_keypair")
+                    Arg::new("sender_keypair")
                         .long("from")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("SENDING_KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Keypair to fund accounts"),
+                        .value_name("KEYPAIR")
+                        .help("Sender keypair; reads the default wallet if not specified"),
                 )
                 .arg(
-                    Arg::with_name("fee_payer")
+                    Arg::new("fee_payer")
                         .long("fee-payer")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Fee payer"),
+                        .help("Fee payer keypair"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("create-stake")
+            ClapCommand::new("create-stake")
                 .about("Create stake accounts")
                 .arg(
-                    Arg::with_name("db_path")
+                    Arg::new("db_path")
                         .long("db-path")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
                         .help(
-                            "Location for storing distribution database. \
-                            The database is used for tracking transactions as they are finalized \
-                            and preventing double spends.",
+                            "Path to file containing a list of recipients",
                         ),
                 )
                 .arg(
-                    Arg::with_name("input_csv")
+                    Arg::new("input_csv")
                         .long("input-csv")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
-                        .help("Allocations CSV file"),
+                        .help("Input CSV file"),
                 )
                 .arg(
-                    Arg::with_name("dry_run")
+                    Arg::new("dry_run")
                         .long("dry-run")
+                        .action(clap::ArgAction::SetTrue)
                         .help("Do not execute any transfers"),
                 )
                 .arg(
-                    Arg::with_name("output_path")
+                    Arg::new("output_path")
                         .long("output-path")
-                        .short("o")
                         .value_name("FILE")
-                        .takes_value(true)
                         .help("Write the transaction log to this file"),
                 )
                 .arg(
-                    Arg::with_name("sender_keypair")
+                    Arg::new("sender_keypair")
                         .long("from")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("SENDING_KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Keypair to fund accounts"),
-                )
-                .arg(
-                    Arg::with_name("unlocked_sol")
-                        .default_value("1.0")
-                        .long("unlocked-sol")
-                        .takes_value(true)
-                        .value_name("SOL_AMOUNT")
-                        .help("Amount of SOL to put in system account to pay for fees"),
-                )
-                .arg(
-                    Arg::with_name("lockup_authority")
-                        .long("lockup-authority")
-                        .takes_value(true)
-                        .value_name("PUBKEY")
-                        .validator(is_valid_pubkey)
-                        .help("Lockup Authority Address"),
-                )
-                .arg(
-                    Arg::with_name("fee_payer")
-                        .long("fee-payer")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Fee payer"),
+                        .help("Sender keypair; reads the default wallet if not specified"),
+                )
+                .arg(
+                    Arg::new("unlocked_sol")
+                        .long("unlocked-sol")
+                        .value_name("AMOUNT")
+                        .help("Amount of SOL to leave unlocked in new stake accounts, in SOL"),
+                )
+                .arg(
+                    Arg::new("lockup_authority")
+                        .long("lockup-authority")
+                        .value_name("KEYPAIR")
+                        .help("Lockup authority keypair"),
+                )
+                .arg(
+                    Arg::new("fee_payer")
+                        .long("fee-payer")
+                        .value_name("KEYPAIR")
+                        .help("Fee payer keypair"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("distribute-stake")
-                .about("Split to stake accounts")
+            ClapCommand::new("distribute-stake")
+                .about("Distribute stake accounts to recipients")
                 .arg(
-                    Arg::with_name("db_path")
+                    Arg::new("db_path")
                         .long("db-path")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
                         .help(
-                            "Location for storing distribution database. \
-                            The database is used for tracking transactions as they are finalized \
-                            and preventing double spends.",
+                            "Path to file containing a list of recipients",
                         ),
                 )
                 .arg(
-                    Arg::with_name("input_csv")
+                    Arg::new("input_csv")
                         .long("input-csv")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
-                        .help("Allocations CSV file"),
+                        .help("Input CSV file"),
                 )
                 .arg(
-                    Arg::with_name("dry_run")
+                    Arg::new("dry_run")
                         .long("dry-run")
+                        .action(clap::ArgAction::SetTrue)
                         .help("Do not execute any transfers"),
                 )
                 .arg(
-                    Arg::with_name("output_path")
+                    Arg::new("output_path")
                         .long("output-path")
-                        .short("o")
                         .value_name("FILE")
-                        .takes_value(true)
                         .help("Write the transaction log to this file"),
                 )
                 .arg(
-                    Arg::with_name("sender_keypair")
+                    Arg::new("sender_keypair")
                         .long("from")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("SENDING_KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Keypair to fund accounts"),
+                        .value_name("KEYPAIR")
+                        .help("Sender keypair; reads the default wallet if not specified"),
                 )
                 .arg(
-                    Arg::with_name("stake_account_address")
-                        .required(true)
+                    Arg::new("stake_account_address")
                         .long("stake-account-address")
-                        .takes_value(true)
-                        .value_name("ACCOUNT_ADDRESS")
-                        .validator(is_valid_pubkey)
-                        .help("Stake Account Address"),
+                        .value_name("ADDRESS")
+                        .help("Stake account address"),
                 )
                 .arg(
-                    Arg::with_name("unlocked_sol")
-                        .default_value("1.0")
+                    Arg::new("unlocked_sol")
                         .long("unlocked-sol")
-                        .takes_value(true)
-                        .value_name("SOL_AMOUNT")
-                        .help("Amount of SOL to put in system account to pay for fees"),
+                        .value_name("AMOUNT")
+                        .help("Amount of SOL to leave unlocked in new stake accounts, in SOL"),
                 )
                 .arg(
-                    Arg::with_name("stake_authority")
+                    Arg::new("stake_authority")
                         .long("stake-authority")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Stake Authority Keypair"),
+                        .help("Stake authority keypair"),
                 )
                 .arg(
-                    Arg::with_name("withdraw_authority")
+                    Arg::new("withdraw_authority")
                         .long("withdraw-authority")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Withdraw Authority Keypair"),
+                        .help("Withdraw authority keypair"),
                 )
                 .arg(
-                    Arg::with_name("lockup_authority")
+                    Arg::new("lockup_authority")
                         .long("lockup-authority")
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Lockup Authority Keypair"),
+                        .help("Lockup authority keypair"),
                 )
                 .arg(
-                    Arg::with_name("fee_payer")
+                    Arg::new("fee_payer")
                         .long("fee-payer")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Fee payer"),
+                        .help("Fee payer keypair"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("distribute-spl-tokens")
+            ClapCommand::new("distribute-spl-tokens")
                 .about("Distribute SPL tokens")
                 .arg(
-                    Arg::with_name("db_path")
+                    Arg::new("db_path")
                         .long("db-path")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
                         .help(
-                            "Location for storing distribution database. \
-                            The database is used for tracking transactions as they are finalized \
-                            and preventing double spends.",
+                            "Path to file containing a list of recipients",
                         ),
                 )
                 .arg(
-                    Arg::with_name("input_csv")
+                    Arg::new("input_csv")
                         .long("input-csv")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
-                        .help("Allocations CSV file"),
+                        .help("Input CSV file"),
                 )
                 .arg(
-                    Arg::with_name("dry_run")
+                    Arg::new("dry_run")
                         .long("dry-run")
+                        .action(clap::ArgAction::SetTrue)
                         .help("Do not execute any transfers"),
                 )
                 .arg(
-                    Arg::with_name("transfer_amount")
+                    Arg::new("transfer_amount")
                         .long("transfer-amount")
-                        .takes_value(true)
                         .value_name("AMOUNT")
-                        .validator(is_amount)
-                        .help("The amount of SPL tokens to send to each recipient"),
+                        .help("The amount to transfer to each recipient"),
                 )
                 .arg(
-                    Arg::with_name("output_path")
+                    Arg::new("output_path")
                         .long("output-path")
-                        .short("o")
                         .value_name("FILE")
-                        .takes_value(true)
                         .help("Write the transaction log to this file"),
                 )
                 .arg(
-                    Arg::with_name("token_account_address")
+                    Arg::new("sender_keypair")
                         .long("from")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("TOKEN_ACCOUNT_ADDRESS")
-                        .validator(is_valid_pubkey)
-                        .help("SPL token account to send from"),
-                )
-                .arg(
-                    Arg::with_name("token_owner")
-                        .long("owner")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("TOKEN_ACCOUNT_OWNER_KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("SPL token account owner"),
-                )
-                .arg(
-                    Arg::with_name("fee_payer")
-                        .long("fee-payer")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("KEYPAIR")
-                        .validator(is_valid_signer)
-                        .help("Fee payer"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("balances")
-                .about("Balance of each account")
-                .arg(
-                    Arg::with_name("input_csv")
-                        .long("input-csv")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("FILE")
-                        .help("Allocations CSV file"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("spl-token-balances")
-                .about("Balance of SPL token associated accounts")
-                .arg(
-                    Arg::with_name("input_csv")
-                        .long("input-csv")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("FILE")
-                        .help("Allocations CSV file"),
+                        .help("Sender keypair; reads the default wallet if not specified"),
                 )
                 .arg(
-                    Arg::with_name("mint_address")
-                        .long("mint")
-                        .required(true)
-                        .takes_value(true)
-                        .value_name("MINT_ADDRESS")
-                        .validator(is_valid_pubkey)
-                        .help("SPL token mint of distribution"),
+                    Arg::new("token_account_address")
+                        .long("token-account-address")
+                        .value_name("ADDRESS")
+                        .help("Token account address"),
+                )
+                .arg(
+                    Arg::new("token_owner")
+                        .long("token-owner")
+                        .value_name("KEYPAIR")
+                        .help("Token owner keypair"),
+                )
+                .arg(
+                    Arg::new("fee_payer")
+                        .long("fee-payer")
+                        .value_name("KEYPAIR")
+                        .help("Fee payer keypair"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("transaction-log")
-                .about("Print the database to a CSV file")
+            ClapCommand::new("balances")
+                .about("Get account balances")
                 .arg(
-                    Arg::with_name("db_path")
+                    Arg::new("input_csv")
+                        .long("input-csv")
+                        .value_name("FILE")
+                        .help("Input CSV file"),
+                )
+        )
+        .subcommand(
+            ClapCommand::new("spl-token-balances")
+                .about("Get SPL token account balances")
+                .arg(
+                    Arg::new("input_csv")
+                        .long("input-csv")
+                        .value_name("FILE")
+                        .help("Input CSV file"),
+                )
+                .arg(
+                    Arg::new("mint_address")
+                        .long("mint-address")
+                        .value_name("ADDRESS")
+                        .help("Mint address"),
+                )
+        )
+        .subcommand(
+            ClapCommand::new("transaction-log")
+                .about("Transaction log")
+                .arg(
+                    Arg::new("db_path")
                         .long("db-path")
                         .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
-                        .help("Location of database to query"),
+                        .help("Path to file containing a list of recipients"),
                 )
                 .arg(
-                    Arg::with_name("output_path")
+                    Arg::new("output_path")
                         .long("output-path")
-                        .required(true)
-                        .takes_value(true)
                         .value_name("FILE")
-                        .help("Output file"),
-                ),
+                        .help("Write the transaction log to this file"),
+                )
         )
         .get_matches_from(args)
 }
 
 fn parse_distribute_tokens_args(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<DistributeTokensArgs, Box<dyn Error>> {
-    let mut wallet_manager = maybe_wallet_manager()?;
-    let signer_matches = ArgMatches::default(); // No default signer
+    let _maybe_wallet_manager = maybe_wallet_manager()?;
+    let input_csv = matches.get_one::<String>("input_csv").unwrap();
+    let transaction_db = matches.get_one::<String>("db_path").unwrap();
+    let transfer_amount = matches
+        .get_one::<String>("transfer_amount")
+        .map(|s| s.as_str())
+        .and_then(|s| {
+            if s == "ALL" {
+                None
+            } else {
+                Some(sol_to_lamports(s.parse::<f64>().unwrap_or_default()))
+            }
+        });
 
-    let sender_keypair_str = value_t_or_exit!(matches, "sender_keypair", String);
     let sender_keypair = signer_from_path(
-        &signer_matches,
-        &sender_keypair_str,
+        matches,
+        matches
+            .get_one::<String>("sender_keypair")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
         "sender",
-        &mut wallet_manager,
+        &mut None,
     )?;
 
-    let fee_payer_str = value_t_or_exit!(matches, "fee_payer", String);
     let fee_payer = signer_from_path(
-        &signer_matches,
-        &fee_payer_str,
-        "fee-payer",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("fee_payer")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "fee_payer",
+        &mut None,
     )?;
 
     Ok(DistributeTokensArgs {
-        input_csv: value_t_or_exit!(matches, "input_csv", String),
-        transaction_db: value_t_or_exit!(matches, "db_path", String),
-        output_path: matches.value_of("output_path").map(|path| path.to_string()),
-        dry_run: matches.is_present("dry_run"),
+        input_csv: input_csv.to_string(),
+        transaction_db: transaction_db.to_string(),
+        transfer_amount,
         sender_keypair,
         fee_payer,
         stake_args: None,
         spl_token_args: None,
-        transfer_amount: value_of(matches, "transfer_amount").map(sol_to_lamports),
+        output_path: matches.get_one::<String>("output_path").map(|path| path.to_string()),
+        dry_run: matches.get_flag("dry_run"),
     })
 }
 
 fn parse_create_stake_args(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<DistributeTokensArgs, Box<dyn Error>> {
-    let mut wallet_manager = maybe_wallet_manager()?;
-    let signer_matches = ArgMatches::default(); // No default signer
+    let _maybe_wallet_manager = maybe_wallet_manager()?;
+    let input_csv = matches.get_one::<String>("input_csv").unwrap();
+    let transaction_db = matches.get_one::<String>("db_path").unwrap();
+    let unlocked_sol = sol_to_lamports(
+        matches
+            .get_one::<String>("unlocked_sol")
+            .unwrap_or(&"1.0".to_string())
+            .parse::<f64>()?,
+    );
 
-    let sender_keypair_str = value_t_or_exit!(matches, "sender_keypair", String);
     let sender_keypair = signer_from_path(
-        &signer_matches,
-        &sender_keypair_str,
+        matches,
+        matches
+            .get_one::<String>("sender_keypair")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
         "sender",
-        &mut wallet_manager,
+        &mut None,
     )?;
 
-    let fee_payer_str = value_t_or_exit!(matches, "fee_payer", String);
     let fee_payer = signer_from_path(
-        &signer_matches,
-        &fee_payer_str,
-        "fee-payer",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("fee_payer")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "fee_payer",
+        &mut None,
     )?;
 
-    let lockup_authority_str = value_t!(matches, "lockup_authority", String).ok();
-    let lockup_authority = lockup_authority_str
-        .map(|path| {
-            pubkey_from_path(
-                &signer_matches,
-                &path,
-                "lockup authority",
-                &mut wallet_manager,
-            )
-        })
-        .transpose()?;
+    let lockup_authority = match matches.get_one::<String>("lockup_authority") {
+        Some(path) => {
+            let signer = signer_from_path(matches, path, "lockup_authority", &mut None)?;
+            Some(signer.pubkey())
+        }
+        None => None,
+    };
 
     let stake_args = StakeArgs {
-        unlocked_sol: sol_to_lamports(value_t_or_exit!(matches, "unlocked_sol", f64)),
+        unlocked_sol,
         lockup_authority,
         sender_stake_args: None,
     };
+
     Ok(DistributeTokensArgs {
-        input_csv: value_t_or_exit!(matches, "input_csv", String),
-        transaction_db: value_t_or_exit!(matches, "db_path", String),
-        output_path: matches.value_of("output_path").map(|path| path.to_string()),
-        dry_run: matches.is_present("dry_run"),
+        input_csv: input_csv.to_string(),
+        transaction_db: transaction_db.to_string(),
+        transfer_amount: None,
         sender_keypair,
         fee_payer,
         stake_args: Some(stake_args),
         spl_token_args: None,
-        transfer_amount: None,
+        output_path: matches.get_one::<String>("output_path").map(|path| path.to_string()),
+        dry_run: matches.get_flag("dry_run"),
     })
 }
 
 fn parse_distribute_stake_args(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<DistributeTokensArgs, Box<dyn Error>> {
-    let mut wallet_manager = maybe_wallet_manager()?;
-    let signer_matches = ArgMatches::default(); // No default signer
+    let _maybe_wallet_manager = maybe_wallet_manager()?;
+    let input_csv = matches.get_one::<String>("input_csv").unwrap();
+    let transaction_db = matches.get_one::<String>("db_path").unwrap();
+    let unlocked_sol = sol_to_lamports(
+        matches
+            .get_one::<String>("unlocked_sol")
+            .unwrap_or(&"1.0".to_string())
+            .parse::<f64>()?,
+    );
 
-    let sender_keypair_str = value_t_or_exit!(matches, "sender_keypair", String);
     let sender_keypair = signer_from_path(
-        &signer_matches,
-        &sender_keypair_str,
+        matches,
+        matches
+            .get_one::<String>("sender_keypair")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
         "sender",
-        &mut wallet_manager,
+        &mut None,
     )?;
 
-    let fee_payer_str = value_t_or_exit!(matches, "fee_payer", String);
     let fee_payer = signer_from_path(
-        &signer_matches,
-        &fee_payer_str,
-        "fee-payer",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("fee_payer")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "fee_payer",
+        &mut None,
     )?;
 
-    let stake_account_address_str = value_t_or_exit!(matches, "stake_account_address", String);
-    let stake_account_address = pubkey_from_path(
-        &signer_matches,
-        &stake_account_address_str,
-        "stake account address",
-        &mut wallet_manager,
-    )?;
+    let stake_account_address = pubkey_of_signer(
+        matches,
+        "stake_account_address",
+        &mut None,
+    )?.unwrap_or_default();
 
-    let stake_authority_str = value_t_or_exit!(matches, "stake_authority", String);
     let stake_authority = signer_from_path(
-        &signer_matches,
-        &stake_authority_str,
-        "stake authority",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("stake_authority")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "stake_authority",
+        &mut None,
     )?;
 
-    let withdraw_authority_str = value_t_or_exit!(matches, "withdraw_authority", String);
     let withdraw_authority = signer_from_path(
-        &signer_matches,
-        &withdraw_authority_str,
-        "withdraw authority",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("withdraw_authority")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "withdraw_authority",
+        &mut None,
     )?;
 
-    let lockup_authority_str = value_t!(matches, "lockup_authority", String).ok();
-    let lockup_authority = lockup_authority_str
-        .map(|path| {
-            signer_from_path(
-                &signer_matches,
-                &path,
-                "lockup authority",
-                &mut wallet_manager,
-            )
-        })
-        .transpose()?;
+    let lockup_authority_keypair = match matches.get_one::<String>("lockup_authority") {
+        Some(path) => Some(signer_from_path(matches, path, "lockup_authority", &mut None)?),
+        None => None,
+    };
 
-    let lockup_authority_address = lockup_authority.as_ref().map(|keypair| keypair.pubkey());
+    let lockup_authority_pubkey = lockup_authority_keypair.as_ref().map(|signer| signer.pubkey());
+
     let sender_stake_args = SenderStakeArgs {
         stake_account_address,
         stake_authority,
         withdraw_authority,
-        lockup_authority,
+        lockup_authority: lockup_authority_keypair,
         rent_exempt_reserve: None,
     };
+
     let stake_args = StakeArgs {
-        unlocked_sol: sol_to_lamports(value_t_or_exit!(matches, "unlocked_sol", f64)),
-        lockup_authority: lockup_authority_address,
+        unlocked_sol,
+        lockup_authority: lockup_authority_pubkey,
         sender_stake_args: Some(sender_stake_args),
     };
+
     Ok(DistributeTokensArgs {
-        input_csv: value_t_or_exit!(matches, "input_csv", String),
-        transaction_db: value_t_or_exit!(matches, "db_path", String),
-        output_path: matches.value_of("output_path").map(|path| path.to_string()),
-        dry_run: matches.is_present("dry_run"),
+        input_csv: input_csv.to_string(),
+        transaction_db: transaction_db.to_string(),
+        transfer_amount: None,
         sender_keypair,
         fee_payer,
         stake_args: Some(stake_args),
         spl_token_args: None,
-        transfer_amount: None,
+        output_path: matches.get_one::<String>("output_path").map(|path| path.to_string()),
+        dry_run: matches.get_flag("dry_run"),
     })
 }
 
 fn parse_distribute_spl_tokens_args(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<DistributeTokensArgs, Box<dyn Error>> {
-    let mut wallet_manager = maybe_wallet_manager()?;
-    let signer_matches = ArgMatches::default(); // No default signer
+    let _maybe_wallet_manager = maybe_wallet_manager()?;
+    let input_csv = matches.get_one::<String>("input_csv").unwrap();
+    let transaction_db = matches.get_one::<String>("db_path").unwrap();
+    let transfer_amount = matches
+        .get_one::<String>("transfer_amount")
+        .map(|s| s.parse::<f64>().unwrap_or_default() as u64);
 
-    let token_owner_str = value_t_or_exit!(matches, "token_owner", String);
-    let token_owner = signer_from_path(
-        &signer_matches,
-        &token_owner_str,
-        "owner",
-        &mut wallet_manager,
+    let sender_keypair = signer_from_path(
+        matches,
+        matches
+            .get_one::<String>("sender_keypair")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "sender",
+        &mut None,
     )?;
 
-    let fee_payer_str = value_t_or_exit!(matches, "fee_payer", String);
     let fee_payer = signer_from_path(
-        &signer_matches,
-        &fee_payer_str,
-        "fee-payer",
-        &mut wallet_manager,
+        matches,
+        matches
+            .get_one::<String>("fee_payer")
+            .map(|s| s.as_str())
+            .unwrap_or(""),
+        "fee_payer",
+        &mut None,
     )?;
 
-    let token_account_address_str = value_t_or_exit!(matches, "token_account_address", String);
-    let token_account_address = pubkey_from_path(
-        &signer_matches,
-        &token_account_address_str,
-        "token account address",
-        &mut wallet_manager,
-    )?;
+    let token_account_address = pubkey_of_signer(
+        matches,
+        "token_account_address",
+        &mut None,
+    )?.unwrap_or_default();
+
+    let spl_token_args = SplTokenArgs {
+        token_account_address,
+        ..SplTokenArgs::default()
+    };
 
     Ok(DistributeTokensArgs {
-        input_csv: value_t_or_exit!(matches, "input_csv", String),
-        transaction_db: value_t_or_exit!(matches, "db_path", String),
-        output_path: matches.value_of("output_path").map(|path| path.to_string()),
-        dry_run: matches.is_present("dry_run"),
-        sender_keypair: token_owner,
+        input_csv: input_csv.to_string(),
+        transaction_db: transaction_db.to_string(),
+        transfer_amount,
+        sender_keypair,
         fee_payer,
         stake_args: None,
-        spl_token_args: Some(SplTokenArgs {
-            token_account_address,
-            ..SplTokenArgs::default()
-        }),
-        transfer_amount: value_of(matches, "transfer_amount"),
+        spl_token_args: Some(spl_token_args),
+        output_path: matches.get_one::<String>("output_path").map(|path| path.to_string()),
+        dry_run: matches.get_flag("dry_run"),
     })
 }
 
-fn parse_balances_args(matches: &ArgMatches<'_>) -> Result<BalancesArgs, Box<dyn Error>> {
-    let mut wallet_manager = maybe_wallet_manager()?;
-    let spl_token_args =
-        pubkey_of_signer(matches, "mint_address", &mut wallet_manager)?.map(|mint| SplTokenArgs {
-            mint,
-            ..SplTokenArgs::default()
-        });
+fn parse_balances_args(matches: &ArgMatches) -> Result<BalancesArgs, Box<dyn Error>> {
+    let input_csv = matches.get_one::<String>("input_csv").unwrap();
+    let spl_token_args = pubkey_of_signer(matches, "mint_address", &mut None)?.map(|mint| SplTokenArgs {
+        mint,
+        ..SplTokenArgs::default()
+    });
+
     Ok(BalancesArgs {
-        input_csv: value_t_or_exit!(matches, "input_csv", String),
+        input_csv: input_csv.to_string(),
         spl_token_args,
     })
 }
 
-fn parse_transaction_log_args(matches: &ArgMatches<'_>) -> TransactionLogArgs {
+fn parse_transaction_log_args(matches: &ArgMatches) -> TransactionLogArgs {
+    let db_path = matches.get_one::<String>("db_path").unwrap();
+    let output_path = matches.get_one::<String>("output_path").unwrap();
+
     TransactionLogArgs {
-        transaction_db: value_t_or_exit!(matches, "db_path", String),
-        output_path: value_t_or_exit!(matches, "output_path", String),
+        transaction_db: db_path.to_string(),
+        output_path: output_path.to_string(),
     }
 }
 
@@ -651,36 +618,36 @@ where
     T: Into<OsString> + Clone,
 {
     let matches = get_matches(args);
-    let config_file = matches.value_of("config_file").unwrap().to_string();
-    let url = matches.value_of("json_rpc_url").map(|x| x.to_string());
+    let config_file = matches.get_one::<String>("config_file").unwrap().to_string();
+    let url = matches.get_one::<String>("json_rpc_url").map(|x| x.to_string());
 
     let command = match matches.subcommand() {
-        ("distribute-tokens", Some(matches)) => {
+        Some(("distribute-tokens", matches)) => {
             Command::DistributeTokens(parse_distribute_tokens_args(matches)?)
         }
-        ("create-stake", Some(matches)) => {
+        Some(("create-stake", matches)) => {
             Command::DistributeTokens(parse_create_stake_args(matches)?)
         }
-        ("distribute-stake", Some(matches)) => {
+        Some(("distribute-stake", matches)) => {
             Command::DistributeTokens(parse_distribute_stake_args(matches)?)
         }
-        ("distribute-spl-tokens", Some(matches)) => {
+        Some(("distribute-spl-tokens", matches)) => {
             Command::DistributeTokens(parse_distribute_spl_tokens_args(matches)?)
         }
-        ("balances", Some(matches)) => Command::Balances(parse_balances_args(matches)?),
-        ("spl-token-balances", Some(matches)) => Command::Balances(parse_balances_args(matches)?),
-        ("transaction-log", Some(matches)) => {
+        Some(("balances", matches)) => Command::Balances(parse_balances_args(matches)?),
+        Some(("spl-token-balances", matches)) => Command::Balances(parse_balances_args(matches)?),
+        Some(("transaction-log", matches)) => {
             Command::TransactionLog(parse_transaction_log_args(matches))
         }
         _ => {
-            eprintln!("{}", matches.usage());
+            eprintln!("Error: No subcommand specified");
             exit(1);
         }
     };
-    let args = Args {
+
+    Ok(Args {
         config_file,
         url,
         command,
-    };
-    Ok(args)
+    })
 }

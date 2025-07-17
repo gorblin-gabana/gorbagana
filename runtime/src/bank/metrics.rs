@@ -1,7 +1,11 @@
 use {
     crate::bank::Bank,
-    solana_sdk::clock::{Epoch, Slot},
-    std::sync::atomic::{AtomicU64, Ordering::Relaxed},
+    solana_clock::{Epoch, Slot},
+    solana_program_runtime::loaded_programs::ProgramCacheStats,
+    std::sync::atomic::{
+        AtomicU64,
+        Ordering::{self, Relaxed},
+    },
 };
 
 pub(crate) struct NewEpochTimings {
@@ -14,13 +18,10 @@ pub(crate) struct NewEpochTimings {
 
 #[derive(Debug, Default)]
 pub(crate) struct RewardsMetrics {
-    pub(crate) load_vote_and_stake_accounts_us: AtomicU64,
     pub(crate) calculate_points_us: AtomicU64,
     pub(crate) redeem_rewards_us: u64,
     pub(crate) store_stake_accounts_us: AtomicU64,
     pub(crate) store_vote_accounts_us: AtomicU64,
-    pub(crate) vote_accounts_cache_miss_count: usize,
-    pub(crate) hash_partition_rewards_us: u64,
 }
 
 pub(crate) struct NewBankTimings {
@@ -31,7 +32,7 @@ pub(crate) struct NewBankTimings {
     pub(crate) blockhash_queue_time_us: u64,
     pub(crate) stakes_cache_time_us: u64,
     pub(crate) epoch_stakes_time_us: u64,
-    pub(crate) builtin_programs_time_us: u64,
+    pub(crate) builtin_program_ids_time_us: u64,
     pub(crate) rewards_pool_pubkeys_time_us: u64,
     pub(crate) executor_cache_time_us: u64,
     pub(crate) transaction_debug_keys_time_us: u64,
@@ -39,9 +40,10 @@ pub(crate) struct NewBankTimings {
     pub(crate) feature_set_time_us: u64,
     pub(crate) ancestors_time_us: u64,
     pub(crate) update_epoch_time_us: u64,
-    pub(crate) recompilation_time_us: u64,
+    pub(crate) cache_preparation_time_us: u64,
     pub(crate) update_sysvars_time_us: u64,
     pub(crate) fill_sysvar_cache_time_us: u64,
+    pub(crate) populate_cache_for_accounts_lt_hash_us: Option<u64>,
 }
 
 pub(crate) fn report_new_epoch_metrics(
@@ -74,11 +76,6 @@ pub(crate) fn report_new_epoch_metrics(
             i64
         ),
         (
-            "load_vote_and_stake_accounts_us",
-            metrics.load_vote_and_stake_accounts_us.load(Relaxed),
-            i64
-        ),
-        (
             "calculate_points_us",
             metrics.calculate_points_us.load(Relaxed),
             i64
@@ -94,16 +91,6 @@ pub(crate) fn report_new_epoch_metrics(
             metrics.store_vote_accounts_us.load(Relaxed),
             i64
         ),
-        (
-            "vote_accounts_cache_miss_count",
-            metrics.vote_accounts_cache_miss_count,
-            i64
-        ),
-        (
-            "hash_partition_rewards_us",
-            metrics.hash_partition_rewards_us,
-            i64
-        ),
     );
 }
 
@@ -111,6 +98,7 @@ pub(crate) fn report_new_bank_metrics(
     slot: Slot,
     parent_slot: Slot,
     block_height: u64,
+    num_accounts_modified_this_slot: Option<usize>,
     timings: NewBankTimings,
 ) {
     datapoint_info!(
@@ -125,7 +113,11 @@ pub(crate) fn report_new_bank_metrics(
         ("blockhash_queue_us", timings.blockhash_queue_time_us, i64),
         ("stakes_cache_us", timings.stakes_cache_time_us, i64),
         ("epoch_stakes_time_us", timings.epoch_stakes_time_us, i64),
-        ("builtin_programs_us", timings.builtin_programs_time_us, i64),
+        (
+            "builtin_programs_us",
+            timings.builtin_program_ids_time_us,
+            i64
+        ),
         (
             "rewards_pool_pubkeys_us",
             timings.rewards_pool_pubkeys_time_us,
@@ -145,12 +137,26 @@ pub(crate) fn report_new_bank_metrics(
         ("feature_set_us", timings.feature_set_time_us, i64),
         ("ancestors_us", timings.ancestors_time_us, i64),
         ("update_epoch_us", timings.update_epoch_time_us, i64),
-        ("recompilation_time_us", timings.recompilation_time_us, i64),
+        (
+            "cache_preparation_time_us",
+            timings.cache_preparation_time_us,
+            i64
+        ),
         ("update_sysvars_us", timings.update_sysvars_time_us, i64),
         (
             "fill_sysvar_cache_us",
             timings.fill_sysvar_cache_time_us,
             i64
+        ),
+        (
+            "num_accounts_modified_this_slot",
+            num_accounts_modified_this_slot,
+            Option<i64>
+        ),
+        (
+            "populate_cache_for_accounts_lt_hash_us",
+            timings.populate_cache_for_accounts_lt_hash_us,
+            Option<i64>
         ),
     );
 }
@@ -158,11 +164,13 @@ pub(crate) fn report_new_bank_metrics(
 /// Metrics for partitioned epoch reward store
 #[derive(Debug, Default)]
 pub(crate) struct RewardsStoreMetrics {
+    pub(crate) total_num_partitions: usize,
     pub(crate) partition_index: u64,
     pub(crate) store_stake_accounts_us: u64,
     pub(crate) store_stake_accounts_count: usize,
     pub(crate) total_stake_accounts_count: usize,
     pub(crate) distributed_rewards: u64,
+    pub(crate) burned_rewards: u64,
     pub(crate) pre_capitalization: u64,
     pub(crate) post_capitalization: u64,
 }
@@ -180,6 +188,7 @@ pub(crate) fn report_partitioned_reward_metrics(bank: &Bank, timings: RewardsSto
             timings.store_stake_accounts_us,
             i64
         ),
+        ("total_num_partitions", timings.total_num_partitions, i64),
         (
             "store_stake_accounts_count",
             timings.store_stake_accounts_count,
@@ -191,7 +200,41 @@ pub(crate) fn report_partitioned_reward_metrics(bank: &Bank, timings: RewardsSto
             i64
         ),
         ("distributed_rewards", timings.distributed_rewards, i64),
+        ("burned_rewards", timings.burned_rewards, i64),
         ("pre_capitalization", timings.pre_capitalization, i64),
         ("post_capitalization", timings.post_capitalization, i64),
     );
+}
+
+/// Logs the measurement values
+pub(crate) fn report_loaded_programs_stats(stats: &ProgramCacheStats, slot: Slot) {
+    let hits = stats.hits.load(Ordering::Relaxed);
+    let misses = stats.misses.load(Ordering::Relaxed);
+    let evictions: u64 = stats.evictions.values().sum();
+    let reloads = stats.reloads.load(Ordering::Relaxed);
+    let insertions = stats.insertions.load(Ordering::Relaxed);
+    let lost_insertions = stats.lost_insertions.load(Ordering::Relaxed);
+    let replacements = stats.replacements.load(Ordering::Relaxed);
+    let one_hit_wonders = stats.one_hit_wonders.load(Ordering::Relaxed);
+    let prunes_orphan = stats.prunes_orphan.load(Ordering::Relaxed);
+    let prunes_environment = stats.prunes_environment.load(Ordering::Relaxed);
+    let empty_entries = stats.empty_entries.load(Ordering::Relaxed);
+    let water_level = stats.water_level.load(Ordering::Relaxed);
+    datapoint_info!(
+        "loaded-programs-cache-stats",
+        ("slot", slot, i64),
+        ("hits", hits, i64),
+        ("misses", misses, i64),
+        ("evictions", evictions, i64),
+        ("reloads", reloads, i64),
+        ("insertions", insertions, i64),
+        ("lost_insertions", lost_insertions, i64),
+        ("replace_entry", replacements, i64),
+        ("one_hit_wonders", one_hit_wonders, i64),
+        ("prunes_orphan", prunes_orphan, i64),
+        ("prunes_environment", prunes_environment, i64),
+        ("empty_entries", empty_entries, i64),
+        ("water_level", water_level, i64),
+    );
+    stats.log();
 }

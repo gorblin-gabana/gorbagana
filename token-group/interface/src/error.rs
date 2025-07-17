@@ -1,13 +1,22 @@
 //! Interface error types
 
-use spl_program_error::*;
+use solana_program_error::{ProgramError, ToStr};
 
 /// Errors that may be returned by the interface.
-#[spl_program_error(hash_error_code_start = 3_406_457_176)]
+#[repr(u32)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    thiserror::Error,
+    num_derive::FromPrimitive,
+    num_enum::TryFromPrimitive,
+    PartialEq,
+)]
 pub enum TokenGroupError {
     /// Size is greater than proposed max size
     #[error("Size is greater than proposed max size")]
-    SizeExceedsNewMaxSize,
+    SizeExceedsNewMaxSize = 3_406_457_176,
     /// Size is greater than max size
     #[error("Size is greater than max size")]
     SizeExceedsMaxSize,
@@ -23,4 +32,32 @@ pub enum TokenGroupError {
     /// Member account should not be the same as the group account
     #[error("Member account should not be the same as the group account")]
     MemberAccountIsGroupAccount,
+}
+
+impl From<TokenGroupError> for ProgramError {
+    fn from(e: TokenGroupError) -> Self {
+        ProgramError::Custom(e as u32)
+    }
+}
+
+impl ToStr for TokenGroupError {
+    fn to_str<E>(&self) -> &'static str
+    where
+        E: 'static + ToStr + TryFrom<u32>,
+    {
+        match self {
+            TokenGroupError::SizeExceedsNewMaxSize => "Size is greater than proposed max size",
+            TokenGroupError::SizeExceedsMaxSize => "Size is greater than max size",
+            TokenGroupError::ImmutableGroup => "Group is immutable",
+            TokenGroupError::IncorrectMintAuthority => {
+                "Incorrect mint authority has signed the instruction"
+            }
+            TokenGroupError::IncorrectUpdateAuthority => {
+                "Incorrect update authority has signed the instruction"
+            }
+            TokenGroupError::MemberAccountIsGroupAccount => {
+                "Member account should not be the same as the group account"
+            }
+        }
+    }
 }

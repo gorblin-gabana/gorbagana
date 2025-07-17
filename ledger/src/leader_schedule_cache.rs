@@ -6,12 +6,10 @@ use {
     },
     itertools::Itertools,
     log::*,
+    solana_clock::{Epoch, Slot},
+    solana_epoch_schedule::EpochSchedule,
+    solana_pubkey::Pubkey,
     solana_runtime::bank::Bank,
-    solana_sdk::{
-        clock::{Epoch, Slot},
-        epoch_schedule::EpochSchedule,
-        pubkey::Pubkey,
-    },
     std::{
         collections::{hash_map::Entry, HashMap, VecDeque},
         sync::{Arc, RwLock},
@@ -134,19 +132,15 @@ impl LeaderScheduleCache {
                 let num_slots = bank.get_slots_in_epoch(k) as usize;
                 let first_slot = bank.epoch_schedule().get_first_slot_in_epoch(k);
                 leader_schedule
-                    .get_indices(pubkey, offset)
+                    .get_leader_upcoming_slots(pubkey, offset)
                     .take_while(move |i| *i < num_slots)
                     .map(move |i| i as Slot + first_slot)
             })
             .skip_while(|slot| {
-                match blockstore {
-                    None => false,
-                    // Skip slots we have already sent a shred for.
-                    Some(blockstore) => match blockstore.meta(*slot).unwrap() {
-                        Some(meta) => meta.received > 0,
-                        None => false,
-                    },
-                }
+                // Skip slots we already have shreds for
+                blockstore
+                    .map(|bs| bs.has_existing_shreds_for_slot(*slot))
+                    .unwrap_or(false)
             });
         let first_slot = schedule.next()?;
         let max_slot = first_slot.saturating_add(max_slot_range);
@@ -182,10 +176,7 @@ impl LeaderScheduleCache {
         // Forbid asking for slots in an unconfirmed epoch
         let bank_epoch = self.epoch_schedule.get_epoch_and_slot_index(slot).0;
         if bank_epoch > *self.max_epoch.read().unwrap() {
-            debug!(
-                "Requested leader in slot: {} of unconfirmed epoch: {}",
-                slot, bank_epoch
-            );
+            debug!("Requested leader in slot: {slot} of unconfirmed epoch: {bank_epoch}");
             return None;
         }
         if cache_result.is_some() {
@@ -257,18 +248,17 @@ mod tests {
                 create_genesis_config_with_leader, GenesisConfigInfo,
             },
             get_tmp_ledger_path_auto_delete,
+            leader_schedule::IdentityKeyedLeaderSchedule,
             staking_utils::tests::setup_vote_and_stake_accounts,
         },
         crossbeam_channel::unbounded,
-        solana_runtime::bank::Bank,
-        solana_sdk::{
-            clock::NUM_CONSECUTIVE_LEADER_SLOTS,
-            epoch_schedule::{
-                EpochSchedule, DEFAULT_LEADER_SCHEDULE_SLOT_OFFSET, DEFAULT_SLOTS_PER_EPOCH,
-                MINIMUM_SLOTS_PER_EPOCH,
-            },
-            signature::{Keypair, Signer},
+        solana_clock::{DEFAULT_SLOTS_PER_EPOCH, NUM_CONSECUTIVE_LEADER_SLOTS},
+        solana_epoch_schedule::{
+            EpochSchedule, DEFAULT_LEADER_SCHEDULE_SLOT_OFFSET, MINIMUM_SLOTS_PER_EPOCH,
         },
+        solana_keypair::Keypair,
+        solana_runtime::bank::Bank,
+        solana_signer::Signer,
         std::{sync::Arc, thread::Builder},
     };
 
@@ -310,10 +300,13 @@ mod tests {
 
     #[test]
     fn test_retain_latest() {
-        let mut cached_schedules = HashMap::new();
+        let mut cached_schedules: HashMap<Epoch, Arc<LeaderSchedule>> = HashMap::new();
         let mut order = VecDeque::new();
         for i in 0..=MAX_SCHEDULES {
-            cached_schedules.insert(i as u64, Arc::new(LeaderSchedule::default()));
+            cached_schedules.insert(
+                i as u64,
+                Arc::new(Box::new(IdentityKeyedLeaderSchedule::default())),
+            );
             order.push_back(i as u64);
         }
         LeaderScheduleCache::retain_latest(&mut cached_schedules, &mut order, MAX_SCHEDULES);
@@ -375,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_next_leader_slot() {
-        let pubkey = solana_sdk::pubkey::new_rand();
+        let pubkey = solana_pubkey::new_rand();
         let mut genesis_config =
             create_genesis_config_with_leader(42, &pubkey, bootstrap_validator_stake_lamports())
                 .genesis_config;
@@ -393,11 +386,11 @@ mod tests {
             pubkey
         );
         assert_eq!(
-            cache.next_leader_slot(&pubkey, 0, &bank, None, std::u64::MAX),
+            cache.next_leader_slot(&pubkey, 0, &bank, None, u64::MAX),
             Some((1, 863_999))
         );
         assert_eq!(
-            cache.next_leader_slot(&pubkey, 1, &bank, None, std::u64::MAX),
+            cache.next_leader_slot(&pubkey, 1, &bank, None, u64::MAX),
             Some((2, 863_999))
         );
         assert_eq!(
@@ -406,18 +399,18 @@ mod tests {
                 2 * genesis_config.epoch_schedule.slots_per_epoch - 1, // no schedule generated for epoch 2
                 &bank,
                 None,
-                std::u64::MAX
+                u64::MAX
             ),
             None
         );
 
         assert_eq!(
             cache.next_leader_slot(
-                &solana_sdk::pubkey::new_rand(), // not in leader_schedule
+                &solana_pubkey::new_rand(), // not in leader_schedule
                 0,
                 &bank,
                 None,
-                std::u64::MAX
+                u64::MAX
             ),
             None
         );
@@ -425,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_next_leader_slot_blockstore() {
-        let pubkey = solana_sdk::pubkey::new_rand();
+        let pubkey = solana_pubkey::new_rand();
         let mut genesis_config =
             create_genesis_config_with_leader(42, &pubkey, bootstrap_validator_stake_lamports())
                 .genesis_config;
@@ -445,7 +438,7 @@ mod tests {
         // Check that the next leader slot after 0 is slot 1
         assert_eq!(
             cache
-                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), std::u64::MAX)
+                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), u64::MAX)
                 .unwrap()
                 .0,
             1
@@ -457,7 +450,7 @@ mod tests {
         blockstore.insert_shreds(shreds, None, false).unwrap();
         assert_eq!(
             cache
-                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), std::u64::MAX)
+                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), u64::MAX)
                 .unwrap()
                 .0,
             1
@@ -470,7 +463,7 @@ mod tests {
         blockstore.insert_shreds(shreds, None, false).unwrap();
         assert_eq!(
             cache
-                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), std::u64::MAX)
+                .next_leader_slot(&pubkey, 0, &bank, Some(&blockstore), u64::MAX)
                 .unwrap()
                 .0,
             3
@@ -483,18 +476,18 @@ mod tests {
                 2 * genesis_config.epoch_schedule.slots_per_epoch - 1, // no schedule generated for epoch 2
                 &bank,
                 Some(&blockstore),
-                std::u64::MAX
+                u64::MAX
             ),
             None
         );
 
         assert_eq!(
             cache.next_leader_slot(
-                &solana_sdk::pubkey::new_rand(), // not in leader_schedule
+                &solana_pubkey::new_rand(), // not in leader_schedule
                 0,
                 &bank,
                 Some(&blockstore),
-                std::u64::MAX
+                u64::MAX
             ),
             None
         );
@@ -521,7 +514,11 @@ mod tests {
             &vote_account,
             &validator_identity,
             bootstrap_validator_stake_lamports()
-                + solana_stake_program::get_minimum_delegation(&bank.feature_set),
+                + solana_stake_program::get_minimum_delegation(
+                    bank.feature_set.is_active(
+                        &agave_feature_set::stake_raise_minimum_delegation_to_1_sol::id(),
+                    ),
+                ),
         );
         let node_pubkey = validator_identity.pubkey();
 
@@ -554,12 +551,12 @@ mod tests {
 
         // If the max root isn't set, we'll get None
         assert!(cache
-            .next_leader_slot(&node_pubkey, 0, &bank, None, std::u64::MAX)
+            .next_leader_slot(&node_pubkey, 0, &bank, None, u64::MAX)
             .is_none());
 
         cache.set_root(&bank);
         let res = cache
-            .next_leader_slot(&node_pubkey, 0, &bank, None, std::u64::MAX)
+            .next_leader_slot(&node_pubkey, 0, &bank, None, u64::MAX)
             .unwrap();
 
         assert_eq!(res.0, expected_slot);
@@ -597,7 +594,7 @@ mod tests {
         assert_eq!(bank.get_epoch_and_slot_index(96).0, 2);
         assert!(cache.slot_leader_at(96, Some(&bank)).is_none());
 
-        let bank2 = Bank::new_from_parent(bank, &solana_sdk::pubkey::new_rand(), 95);
+        let bank2 = Bank::new_from_parent(bank, &solana_pubkey::new_rand(), 95);
         assert!(bank2.epoch_vote_accounts(2).is_some());
 
         // Set root for a slot in epoch 1, so that epoch 2 is now confirmed
@@ -620,7 +617,7 @@ mod tests {
         cache.set_max_schedules(0);
         assert_eq!(cache.max_schedules(), MAX_SCHEDULES);
 
-        cache.set_max_schedules(std::usize::MAX);
-        assert_eq!(cache.max_schedules(), std::usize::MAX);
+        cache.set_max_schedules(usize::MAX);
+        assert_eq!(cache.max_schedules(), usize::MAX);
     }
 }

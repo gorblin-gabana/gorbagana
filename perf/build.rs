@@ -1,13 +1,4 @@
-extern crate rustc_version;
-use rustc_version::{version_meta, Channel};
-
 fn main() {
-    // Tell cargo about our custom cfg flags
-    println!("cargo:rustc-check-cfg=cfg(RUSTC_WITH_SPECIALIZATION)");
-    println!("cargo:rustc-check-cfg=cfg(RUSTC_WITHOUT_SPECIALIZATION)");
-    println!("cargo:rustc-check-cfg=cfg(build_target_feature_avx)");
-    println!("cargo:rustc-check-cfg=cfg(build_target_feature_avx2)");
-
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx") {
@@ -15,24 +6,6 @@ fn main() {
         }
         if is_x86_feature_detected!("avx2") {
             println!("cargo:rustc-cfg=build_target_feature_avx2");
-        }
-    }
-
-    // Copied and adapted from
-    // https://github.com/Kimundi/rustc-version-rs/blob/1d692a965f4e48a8cb72e82cda953107c0d22f47/README.md#example
-    // Licensed under Apache-2.0 + MIT
-    match version_meta().unwrap().channel {
-        Channel::Stable => {
-            println!("cargo:rustc-cfg=RUSTC_WITHOUT_SPECIALIZATION");
-        }
-        Channel::Beta => {
-            println!("cargo:rustc-cfg=RUSTC_WITHOUT_SPECIALIZATION");
-        }
-        Channel::Nightly => {
-            println!("cargo:rustc-cfg=RUSTC_WITH_SPECIALIZATION");
-        }
-        Channel::Dev => {
-            println!("cargo:rustc-cfg=RUSTC_WITH_SPECIALIZATION");
         }
     }
 }

@@ -1,12 +1,18 @@
 use {
     criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput},
     rand::seq::SliceRandom,
+    solana_account::AccountSharedData,
     solana_accounts_db::{
         accounts_db::AccountsDb,
         accounts_hash::{AccountHash, AccountsHasher},
     },
-    solana_sdk::{account::AccountSharedData, hash::Hash, pubkey::Pubkey},
+    solana_hash::Hash,
+    solana_pubkey::Pubkey,
 };
+
+#[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 const KB: usize = 1024;
 const MB: usize = KB * KB;
@@ -24,7 +30,7 @@ const DATA_SIZES: [usize; 6] = [
 /// part of computing an account's hash.
 ///
 /// Ensure this constant stays in sync with the value of `META_SIZE` in
-/// AccountsDb::hash_account_data().
+/// AccountsDb::hash_account_helper().
 const META_SIZE: usize = 81;
 
 fn bench_hash_account(c: &mut Criterion) {
@@ -37,8 +43,11 @@ fn bench_hash_account(c: &mut Criterion) {
         let num_bytes = META_SIZE.checked_add(data_size).unwrap();
         group.throughput(Throughput::Bytes(num_bytes as u64));
         let account = AccountSharedData::new(lamports, data_size, &owner);
-        group.bench_function(BenchmarkId::new("data_size", data_size), |b| {
+        group.bench_function(BenchmarkId::new("blake3", data_size), |b| {
             b.iter(|| AccountsDb::hash_account(&account, &address));
+        });
+        group.bench_function(BenchmarkId::new("lattice", data_size), |b| {
+            b.iter(|| AccountsDb::lt_hash_account(&account, &address));
         });
     }
 }
@@ -46,8 +55,8 @@ fn bench_hash_account(c: &mut Criterion) {
 fn bench_accounts_delta_hash(c: &mut Criterion) {
     const ACCOUNTS_COUNTS: [usize; 4] = [
         1,      // the smallest count; will bench overhead
-        100,    // number of accounts written per slot on mnb (with *no* rent rewrites)
-        1_000,  // number of accounts written slot on mnb (with rent rewrites)
+        100,    // lower range of accounts written per slot on mnb
+        1_000,  // higher range of accounts written per slot on mnb
         10_000, // reasonable largest number of accounts written per slot
     ];
 

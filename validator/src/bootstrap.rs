@@ -3,33 +3,31 @@ use {
     log::*,
     rand::{seq::SliceRandom, thread_rng, Rng},
     rayon::prelude::*,
+    solana_clock::Slot,
+    solana_commitment_config::CommitmentConfig,
     solana_core::validator::{ValidatorConfig, ValidatorStartProgress},
     solana_download_utils::{download_snapshot_archive, DownloadProgressRecord},
     solana_genesis_utils::download_then_check_genesis_hash,
     solana_gossip::{
         cluster_info::{ClusterInfo, Node},
-        contact_info::Protocol,
-        crds_value,
+        contact_info::{ContactInfo, Protocol},
+        crds_data,
         gossip_service::GossipService,
-        legacy_contact_info::LegacyContactInfo as ContactInfo,
     },
+    solana_hash::Hash,
+    solana_keypair::Keypair,
     solana_metrics::datapoint_info,
+    solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
     solana_runtime::{
         snapshot_archive_info::SnapshotArchiveInfoGetter, snapshot_package::SnapshotKind,
         snapshot_utils,
     },
-    solana_sdk::{
-        clock::Slot,
-        commitment_config::CommitmentConfig,
-        hash::Hash,
-        pubkey::Pubkey,
-        signature::{Keypair, Signer},
-    },
-    solana_streamer::socket::SocketAddrSpace,
+    solana_signer::Signer,
+    solana_streamer::{atomic_udp_socket::AtomicUdpSocket, socket::SocketAddrSpace},
     std::{
         collections::{hash_map::RandomState, HashMap, HashSet},
-        net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
+        net::{SocketAddr, TcpListener, TcpStream},
         path::Path,
         process::exit,
         sync::{
@@ -58,7 +56,7 @@ pub const MAX_RPC_CONNECTIONS_EVALUATED_PER_ITERATION: usize = 32;
 
 pub const PING_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RpcBootstrapConfig {
     pub no_genesis_fetch: bool,
     pub no_snapshot_fetch: bool,
@@ -79,26 +77,34 @@ fn verify_reachable_ports(
             .map(|addr| socket_addr_space.check(addr))
             .unwrap_or_default()
     };
-    let mut udp_sockets = vec![&node.sockets.gossip, &node.sockets.repair];
 
-    if verify_address(&node.info.serve_repair(Protocol::UDP).ok()) {
+    let gossip_socket = node.sockets.gossip.load();
+    let mut udp_sockets = vec![&gossip_socket, &node.sockets.repair];
+
+    if verify_address(&node.info.serve_repair(Protocol::UDP)) {
         udp_sockets.push(&node.sockets.serve_repair);
     }
-    if verify_address(&node.info.tpu(Protocol::UDP).ok()) {
+    if verify_address(&node.info.tpu(Protocol::UDP)) {
         udp_sockets.extend(node.sockets.tpu.iter());
-        udp_sockets.push(&node.sockets.tpu_quic);
+        udp_sockets.extend(&node.sockets.tpu_quic);
     }
-    if verify_address(&node.info.tpu_forwards(Protocol::UDP).ok()) {
+    if verify_address(&node.info.tpu_forwards(Protocol::UDP)) {
         udp_sockets.extend(node.sockets.tpu_forwards.iter());
-        udp_sockets.push(&node.sockets.tpu_forwards_quic);
+        udp_sockets.extend(&node.sockets.tpu_forwards_quic);
     }
-    if verify_address(&node.info.tpu_vote().ok()) {
+    if verify_address(&node.info.tpu_vote(Protocol::UDP)) {
         udp_sockets.extend(node.sockets.tpu_vote.iter());
     }
-    if verify_address(&node.info.tvu(Protocol::UDP).ok()) {
+    if verify_address(&node.info.tvu(Protocol::UDP)) {
         udp_sockets.extend(node.sockets.tvu.iter());
         udp_sockets.extend(node.sockets.broadcast.iter());
         udp_sockets.extend(node.sockets.retransmit_sockets.iter());
+    }
+    if !solana_net_utils::verify_all_reachable_udp(
+        &cluster_entrypoint.gossip().unwrap(),
+        &udp_sockets,
+    ) {
+        return false;
     }
 
     let mut tcp_listeners = vec![];
@@ -107,28 +113,21 @@ fn verify_reachable_ports(
             ("RPC", rpc_addr, node.info.rpc()),
             ("RPC pubsub", rpc_pubsub_addr, node.info.rpc_pubsub()),
         ] {
-            if verify_address(&public_addr.as_ref().ok().copied()) {
-                tcp_listeners.push((
-                    bind_addr.port(),
-                    TcpListener::bind(bind_addr).unwrap_or_else(|err| {
-                        error!("Unable to bind to tcp {bind_addr:?} for {purpose}: {err}");
-                        exit(1);
-                    }),
-                ));
+            if verify_address(public_addr) {
+                tcp_listeners.push(TcpListener::bind(bind_addr).unwrap_or_else(|err| {
+                    error!("Unable to bind to tcp {bind_addr:?} for {purpose}: {err}");
+                    exit(1);
+                }));
             }
         }
     }
 
     if let Some(ip_echo) = &node.sockets.ip_echo {
         let ip_echo = ip_echo.try_clone().expect("unable to clone tcp_listener");
-        tcp_listeners.push((ip_echo.local_addr().unwrap().port(), ip_echo));
+        tcp_listeners.push(ip_echo);
     }
 
-    solana_net_utils::verify_reachable_ports(
-        &cluster_entrypoint.gossip().unwrap(),
-        tcp_listeners,
-        &udp_sockets,
-    )
+    solana_net_utils::verify_all_reachable_tcp(&cluster_entrypoint.gossip().unwrap(), tcp_listeners)
 }
 
 fn is_known_validator(id: &Pubkey, known_validators: &Option<HashSet<Pubkey>>) -> bool {
@@ -144,8 +143,8 @@ fn start_gossip_node(
     cluster_entrypoints: &[ContactInfo],
     ledger_path: &Path,
     gossip_addr: &SocketAddr,
-    gossip_socket: UdpSocket,
-    expected_shred_version: Option<u16>,
+    gossip_socket: AtomicUdpSocket,
+    expected_shred_version: u16,
     gossip_validators: Option<HashSet<Pubkey>>,
     should_check_duplicate_instance: bool,
     socket_addr_space: SocketAddrSpace,
@@ -153,7 +152,7 @@ fn start_gossip_node(
     let contact_info = ClusterInfo::gossip_contact_info(
         identity_keypair.pubkey(),
         *gossip_addr,
-        expected_shred_version.unwrap_or(0),
+        expected_shred_version,
     );
     let mut cluster_info = ClusterInfo::new(contact_info, identity_keypair, socket_addr_space);
     cluster_info.set_entrypoints(cluster_entrypoints.to_vec());
@@ -175,7 +174,6 @@ fn start_gossip_node(
 
 fn get_rpc_peers(
     cluster_info: &ClusterInfo,
-    cluster_entrypoints: &[ContactInfo],
     validator_config: &ValidatorConfig,
     blacklisted_rpc_nodes: &mut HashSet<Pubkey>,
     blacklist_timeout: &Instant,
@@ -185,22 +183,6 @@ fn get_rpc_peers(
     let shred_version = validator_config
         .expected_shred_version
         .unwrap_or_else(|| cluster_info.my_shred_version());
-    if shred_version == 0 {
-        let all_zero_shred_versions = cluster_entrypoints.iter().all(|cluster_entrypoint| {
-            cluster_entrypoint
-                .gossip()
-                .ok()
-                .and_then(|addr| cluster_info.lookup_contact_info_by_gossip_addr(&addr))
-                .map_or(false, |entrypoint| entrypoint.shred_version() == 0)
-        });
-
-        if all_zero_shred_versions {
-            eprintln!("Entrypoint shred version is zero.  Restart with --expected-shred-version");
-            exit(1);
-        }
-        info!("Waiting to adopt entrypoint shred version...");
-        return vec![];
-    }
 
     info!(
         "Searching for an RPC service with shred version {shred_version}{}...",
@@ -399,7 +381,9 @@ pub fn attempt_download_genesis_and_snapshot(
     authorized_voter_keypairs: Arc<RwLock<Vec<Arc<Keypair>>>>,
 ) -> Result<(), String> {
     download_then_check_genesis_hash(
-        &rpc_contact_info.rpc().map_err(|err| format!("{err:?}"))?,
+        &rpc_contact_info
+            .rpc()
+            .ok_or_else(|| String::from("Invalid RPC address"))?,
         ledger_path,
         &mut validator_config.expected_genesis_hash,
         bootstrap_config.max_genesis_archive_unpacked_size,
@@ -447,7 +431,7 @@ pub fn attempt_download_genesis_and_snapshot(
         )
         .unwrap_or_else(|err| {
             // Consider failures here to be more likely due to user error (eg,
-            // incorrect `solana-validator` command-line arguments) rather than the
+            // incorrect `agave-validator` command-line arguments) rather than the
             // RPC node failing.
             //
             // Power users can always use the `--no-check-vote-account` option to
@@ -474,7 +458,6 @@ fn ping(addr: &SocketAddr) -> Option<Duration> {
 fn get_vetted_rpc_nodes(
     vetted_rpc_nodes: &mut Vec<(ContactInfo, Option<SnapshotHash>, RpcClient)>,
     cluster_info: &Arc<ClusterInfo>,
-    cluster_entrypoints: &[ContactInfo],
     validator_config: &ValidatorConfig,
     blacklisted_rpc_nodes: &mut HashSet<Pubkey>,
     bootstrap_config: &RpcBootstrapConfig,
@@ -482,7 +465,6 @@ fn get_vetted_rpc_nodes(
     while vetted_rpc_nodes.is_empty() {
         let rpc_node_details = match get_rpc_nodes(
             cluster_info,
-            cluster_entrypoints,
             validator_config,
             blacklisted_rpc_nodes,
             bootstrap_config,
@@ -514,7 +496,7 @@ fn get_vetted_rpc_nodes(
                         rpc_contact_info.rpc()
                     );
 
-                    let rpc_addr = rpc_contact_info.rpc().ok()?;
+                    let rpc_addr = rpc_contact_info.rpc()?;
                     let ping_time = ping(&rpc_addr);
 
                     let rpc_client =
@@ -631,8 +613,10 @@ pub fn rpc_bootstrap(
                     .info
                     .gossip()
                     .expect("Operator must spin up node with valid gossip address"),
-                node.sockets.gossip.try_clone().unwrap(),
-                validator_config.expected_shred_version,
+                node.sockets.gossip.clone(),
+                validator_config
+                    .expected_shred_version
+                    .expect("expected_shred_version should not be None"),
                 validator_config.gossip_validators.clone(),
                 should_check_duplicate_instance,
                 socket_addr_space,
@@ -643,7 +627,6 @@ pub fn rpc_bootstrap(
         get_vetted_rpc_nodes(
             &mut vetted_rpc_nodes,
             &gossip.as_ref().unwrap().0,
-            cluster_entrypoints,
             validator_config,
             &mut blacklisted_rpc_nodes,
             &bootstrap_config,
@@ -713,7 +696,6 @@ pub fn rpc_bootstrap(
 /// This function finds the highest compatible snapshots from the cluster and returns RPC peers.
 fn get_rpc_nodes(
     cluster_info: &ClusterInfo,
-    cluster_entrypoints: &[ContactInfo],
     validator_config: &ValidatorConfig,
     blacklisted_rpc_nodes: &mut HashSet<Pubkey>,
     bootstrap_config: &RpcBootstrapConfig,
@@ -729,7 +711,6 @@ fn get_rpc_nodes(
 
         let rpc_peers = get_rpc_peers(
             cluster_info,
-            cluster_entrypoints,
             validator_config,
             blacklisted_rpc_nodes,
             &blacklist_timeout,
@@ -869,7 +850,7 @@ fn get_peer_snapshot_hashes(
         // being selected.  For example, if there are two peer snapshot hashes:
         // (A) full snapshot slot: 100, incremental snapshot slot: 160
         // (B) full snapshot slot: 150, incremental snapshot slot: None
-        // Then (A) has the highest overall snapshot slot.  But if we're not downlading and
+        // Then (A) has the highest overall snapshot slot.  But if we're not downloading and
         // incremental snapshot, (B) should be selected since it's full snapshot of 150 is highest.
         retain_peer_snapshot_hashes_with_highest_incremental_snapshot_slot(
             &mut peer_snapshot_hashes,
@@ -1250,14 +1231,18 @@ fn download_snapshot(
 
     *start_progress.write().unwrap() = ValidatorStartProgress::DownloadingSnapshot {
         slot: desired_snapshot_hash.0,
-        rpc_addr: rpc_contact_info.rpc().map_err(|err| format!("{err:?}"))?,
+        rpc_addr: rpc_contact_info
+            .rpc()
+            .ok_or_else(|| String::from("Invalid RPC address"))?,
     };
     let desired_snapshot_hash = (
         desired_snapshot_hash.0,
         solana_runtime::snapshot_hash::SnapshotHash(desired_snapshot_hash.1),
     );
     download_snapshot_archive(
-        &rpc_contact_info.rpc().map_err(|err| format!("{err:?}"))?,
+        &rpc_contact_info
+            .rpc()
+            .ok_or_else(|| String::from("Invalid RPC address"))?,
         full_snapshot_archives_dir,
         incremental_snapshot_archives_dir,
         desired_snapshot_hash,
@@ -1357,7 +1342,7 @@ fn should_use_local_snapshot(
 /// Get the node's highest snapshot hashes from CRDS
 fn get_snapshot_hashes_for_node(cluster_info: &ClusterInfo, node: &Pubkey) -> Option<SnapshotHash> {
     cluster_info.get_snapshot_hashes_for_node(node).map(
-        |crds_value::SnapshotHashes {
+        |crds_data::SnapshotHashes {
              full, incremental, ..
          }| {
             let highest_incremental_snapshot_hash = incremental.into_iter().max();

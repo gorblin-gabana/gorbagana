@@ -15,9 +15,9 @@ use {
         program_error::ProgramError,
         pubkey::Pubkey,
         rent::Rent,
-        system_program,
         sysvar::Sysvar,
     },
+    solana_system_interface::program as system_program,
     spl_associated_token_account_client::address::get_associated_token_address_and_bump_seed_internal,
     spl_token_2022::{
         extension::{ExtensionType, StateWithExtensions},
@@ -28,9 +28,9 @@ use {
 /// Specify when to create the associated token account
 #[derive(PartialEq)]
 enum CreateMode {
-    /// Always try to create the ATA
+    /// Always try to create the associated token account
     Always,
-    /// Only try to create the ATA if non-existent
+    /// Only try to create the associated token account if non-existent
     Idempotent,
 }
 
@@ -62,7 +62,7 @@ pub fn process_instruction(
     }
 }
 
-/// Processes CreateAssociatedTokenAccount instruction
+/// Processes `CreateAssociatedTokenAccount` instruction
 fn process_create_associated_token_account(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

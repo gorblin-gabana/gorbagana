@@ -7,6 +7,10 @@ use {
     test::Bencher,
 };
 
+#[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 const NUM: usize = 1000;
 
 #[bench]
@@ -17,7 +21,7 @@ fn bench_discard(bencher: &mut Bencher) {
 
     // generate packet vector
     let batches = to_packet_batches(
-        &std::iter::repeat(tx).take(num_packets).collect::<Vec<_>>(),
+        &std::iter::repeat_n(tx, num_packets).collect::<Vec<_>>(),
         10,
     );
 

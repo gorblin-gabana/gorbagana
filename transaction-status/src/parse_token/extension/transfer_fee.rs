@@ -1,18 +1,13 @@
-use {
-    super::*,
-    spl_token_2022::{
-        extension::transfer_fee::instruction::TransferFeeInstruction,
-    },
-};
+use {super::*, spl_token_2022::extension::transfer_fee::instruction::TransferFeeInstruction};
 
 pub(in crate::parse_token) fn parse_transfer_fee_instruction(
     instruction_data: &[u8],
     account_indexes: &[u8],
     account_keys: &AccountKeys,
 ) -> Result<ParsedInstructionEnum, ParseInstructionError> {
-    match TransferFeeInstruction::unpack(instruction_data)
-        .map_err(|_| ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken))?
-    {
+    let transfer_fee_instruction = TransferFeeInstruction::unpack(instruction_data)
+        .map_err(|_| ParseInstructionError::InstructionNotParsable(ParsableProgram::SplToken))?;
+    match transfer_fee_instruction {
         TransferFeeInstruction::InitializeTransferFeeConfig {
             transfer_fee_config_authority,
             withdraw_withheld_authority,
@@ -49,12 +44,13 @@ pub(in crate::parse_token) fn parse_transfer_fee_instruction(
             fee,
         } => {
             check_num_token_accounts(account_indexes, 4)?;
+            let additional_data = SplTokenAdditionalDataV2::with_decimals(decimals);
             let mut value = json!({
                 "source": account_keys[account_indexes[0] as usize].to_string(),
                 "mint": account_keys[account_indexes[1] as usize].to_string(),
                 "destination": account_keys[account_indexes[2] as usize].to_string(),
-                "tokenAmount": token_amount_to_ui_amount(amount, decimals),
-                "feeAmount": token_amount_to_ui_amount(fee, decimals),
+                "tokenAmount": token_amount_to_ui_amount_v3(amount, &additional_data),
+                "feeAmount": token_amount_to_ui_amount_v3(fee, &additional_data),
             });
             let map = value.as_object_mut().unwrap();
             parse_signers(
@@ -164,11 +160,8 @@ pub(in crate::parse_token) fn parse_transfer_fee_instruction(
 #[cfg(test)]
 mod test {
     use {
-        super::*,
-        solana_sdk::pubkey::Pubkey,
-        spl_token_2022::{
-            extension::transfer_fee::instruction::*, solana_program::message::Message,
-        },
+        super::*, solana_message::Message, solana_pubkey::Pubkey,
+        spl_token_2022::extension::transfer_fee::instruction::*,
     };
 
     #[test]

@@ -1,27 +1,33 @@
+#[cfg(not(target_arch = "wasm32"))]
+use solana_zk_sdk::encryption::grouped_elgamal::GroupedElGamal;
+#[cfg(target_arch = "wasm32")]
+use solana_zk_sdk::encryption::grouped_elgamal::{
+    GroupedElGamalCiphertext2Handles, GroupedElGamalCiphertext3Handles,
+};
 use {
     crate::{
         encryption::{FeeCiphertext, TransferAmountCiphertext},
         errors::TokenProofGenerationError,
         try_combine_lo_hi_ciphertexts, try_combine_lo_hi_commitments, try_combine_lo_hi_openings,
-        try_split_u64, TRANSFER_AMOUNT_HI_BITS, TRANSFER_AMOUNT_LO_BITS,
+        try_split_u64, CiphertextValidityProofWithAuditorCiphertext, TRANSFER_AMOUNT_HI_BITS,
+        TRANSFER_AMOUNT_LO_BITS,
     },
     curve25519_dalek::scalar::Scalar,
     solana_zk_sdk::{
         encryption::{
             auth_encryption::{AeCiphertext, AeKey},
             elgamal::{ElGamalCiphertext, ElGamalKeypair, ElGamalPubkey},
-            grouped_elgamal::GroupedElGamal,
             pedersen::{Pedersen, PedersenCommitment, PedersenOpening},
         },
         zk_elgamal_proof_program::proof_data::{
             BatchedGroupedCiphertext2HandlesValidityProofData,
             BatchedGroupedCiphertext3HandlesValidityProofData, BatchedRangeProofU256Data,
-            CiphertextCommitmentEqualityProofData, PercentageWithCapProofData,
+            CiphertextCommitmentEqualityProofData, PercentageWithCapProofData, ZkProofData,
         },
     },
 };
 
-
+const MAX_FEE_BASIS_POINTS_SUB_ONE: u64 = 9_999;
 const MAX_FEE_BASIS_POINTS: u64 = 10_000;
 const ONE_IN_BASIS_POINTS: u128 = MAX_FEE_BASIS_POINTS as u128;
 
@@ -29,14 +35,20 @@ const FEE_AMOUNT_LO_BITS: usize = 16;
 const FEE_AMOUNT_HI_BITS: usize = 32;
 
 const REMAINING_BALANCE_BIT_LENGTH: usize = 64;
-const DELTA_BIT_LENGTH: usize = 48;
+const DELTA_BIT_LENGTH: usize = 16;
+const NET_TRANSFER_AMOUNT_BIT_LENGTH: usize = 64;
 
 /// The proof data required for a confidential transfer instruction when the
 /// mint is extended for fees
+///
+/// NOTE: The proofs certify that the transfer fee is a valid percentage of the
+/// transfer amount, as determined by the fee basis points, or that the fee is
+/// exactly the maximum fee. While the sender is expected to choose the lower of
+/// these two options, the proof does not enforce this choice.
 pub struct TransferWithFeeProofData {
     pub equality_proof_data: CiphertextCommitmentEqualityProofData,
-    pub transfer_amount_ciphertext_validity_proof_data:
-        BatchedGroupedCiphertext3HandlesValidityProofData,
+    pub transfer_amount_ciphertext_validity_proof_data_with_ciphertext:
+        CiphertextValidityProofWithAuditorCiphertext,
     pub percentage_with_cap_proof_data: PercentageWithCapProofData,
     pub fee_ciphertext_validity_proof_data: BatchedGroupedCiphertext2HandlesValidityProofData,
     pub range_proof_data: BatchedRangeProofU256Data,
@@ -71,6 +83,16 @@ pub fn transfer_with_fee_split_proof_data(
             destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
         );
+    #[cfg(not(target_arch = "wasm32"))]
+    let grouped_ciphertext_lo = transfer_amount_grouped_ciphertext_lo.0;
+    #[cfg(target_arch = "wasm32")]
+    let grouped_ciphertext_lo = GroupedElGamalCiphertext3Handles::encryption_with_u64(
+        source_elgamal_keypair.pubkey(),
+        destination_elgamal_pubkey,
+        auditor_elgamal_pubkey,
+        transfer_amount_lo,
+        &transfer_amount_opening_lo,
+    );
 
     let (transfer_amount_grouped_ciphertext_hi, transfer_amount_opening_hi) =
         TransferAmountCiphertext::new(
@@ -79,6 +101,16 @@ pub fn transfer_with_fee_split_proof_data(
             destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
         );
+    #[cfg(not(target_arch = "wasm32"))]
+    let grouped_ciphertext_hi = transfer_amount_grouped_ciphertext_hi.0;
+    #[cfg(target_arch = "wasm32")]
+    let grouped_ciphertext_hi = GroupedElGamalCiphertext3Handles::encryption_with_u64(
+        source_elgamal_keypair.pubkey(),
+        destination_elgamal_pubkey,
+        auditor_elgamal_pubkey,
+        transfer_amount_hi,
+        &transfer_amount_opening_hi,
+    );
 
     // Decrypt the current available balance at the source
     let current_decrypted_available_balance = current_decryptable_available_balance
@@ -130,14 +162,33 @@ pub fn transfer_with_fee_split_proof_data(
             source_elgamal_keypair.pubkey(),
             destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
-            &transfer_amount_grouped_ciphertext_lo.0,
-            &transfer_amount_grouped_ciphertext_hi.0,
+            &grouped_ciphertext_lo,
+            &grouped_ciphertext_hi,
             transfer_amount_lo,
             transfer_amount_hi,
             &transfer_amount_opening_lo,
             &transfer_amount_opening_hi,
         )
         .map_err(TokenProofGenerationError::from)?;
+
+    let transfer_amount_auditor_ciphertext_lo = transfer_amount_ciphertext_validity_proof_data
+        .context_data()
+        .grouped_ciphertext_lo
+        .try_extract_ciphertext(2)
+        .map_err(|_| TokenProofGenerationError::CiphertextExtraction)?;
+
+    let transfer_amount_auditor_ciphertext_hi = transfer_amount_ciphertext_validity_proof_data
+        .context_data()
+        .grouped_ciphertext_hi
+        .try_extract_ciphertext(2)
+        .map_err(|_| TokenProofGenerationError::CiphertextExtraction)?;
+
+    let transfer_amount_ciphertext_validity_proof_data_with_ciphertext =
+        CiphertextValidityProofWithAuditorCiphertext {
+            proof_data: transfer_amount_ciphertext_validity_proof_data,
+            ciphertext_lo: transfer_amount_auditor_ciphertext_lo,
+            ciphertext_hi: transfer_amount_auditor_ciphertext_hi,
+        };
 
     // calculate fee
     let transfer_fee_basis_points = fee_rate_basis_points;
@@ -148,6 +199,9 @@ pub fn transfer_with_fee_split_proof_data(
     // if raw fee is greater than the maximum fee, then use the maximum fee for the
     // fee amount
     let fee_amount = std::cmp::min(transfer_fee_maximum_fee, raw_fee_amount);
+    let net_transfer_amount = transfer_amount
+        .checked_sub(fee_amount)
+        .ok_or(TokenProofGenerationError::FeeCalculation)?;
 
     // split and encrypt fee
     let (fee_amount_lo, fee_amount_hi) = try_split_u64(fee_amount, FEE_AMOUNT_LO_BITS)
@@ -187,14 +241,22 @@ pub fn transfer_with_fee_split_proof_data(
         try_combine_lo_hi_openings(&fee_opening_lo, &fee_opening_hi, FEE_AMOUNT_LO_BITS)
             .ok_or(TokenProofGenerationError::IllegalAmountBitLength)?;
 
+    // compute net transfer amount = transfer_amount - fee
+    #[allow(clippy::arithmetic_side_effects)]
+    let net_transfer_amount_commitment =
+        combined_transfer_amount_commitment - combined_fee_commitment;
+    #[allow(clippy::arithmetic_side_effects)]
+    let net_transfer_amount_opening = &combined_transfer_amount_opening - &combined_fee_opening;
+
     // compute claimed and real delta commitment
     let (claimed_commitment, claimed_opening) = Pedersen::new(delta_fee);
     let (delta_commitment, delta_opening) = compute_delta_commitment_and_opening(
-        &combined_transfer_amount_commitment,
-        &combined_fee_commitment,
-        &combined_transfer_amount_opening,
-        &combined_fee_opening,
-        transfer_fee_basis_points as u64,
+        (
+            &combined_transfer_amount_commitment,
+            &combined_transfer_amount_opening,
+        ),
+        (&combined_fee_commitment, &combined_fee_opening),
+        transfer_fee_basis_points,
     );
 
     // generate fee sigma proof
@@ -213,6 +275,7 @@ pub fn transfer_with_fee_split_proof_data(
 
     // encrypt the fee amount under the destination and withdraw withheld authority
     // ElGamal public key
+    #[cfg(not(target_arch = "wasm32"))]
     let fee_destination_withdraw_withheld_authority_ciphertext_lo = GroupedElGamal::encrypt_with(
         [
             destination_elgamal_pubkey,
@@ -221,6 +284,16 @@ pub fn transfer_with_fee_split_proof_data(
         fee_amount_lo,
         &fee_opening_lo,
     );
+    #[cfg(target_arch = "wasm32")]
+    let fee_destination_withdraw_withheld_authority_ciphertext_lo =
+        GroupedElGamalCiphertext2Handles::encryption_with_u64(
+            destination_elgamal_pubkey,
+            withdraw_withheld_authority_elgamal_pubkey,
+            fee_amount_lo,
+            &fee_opening_lo,
+        );
+
+    #[cfg(not(target_arch = "wasm32"))]
     let fee_destination_withdraw_withheld_authority_ciphertext_hi = GroupedElGamal::encrypt_with(
         [
             destination_elgamal_pubkey,
@@ -229,6 +302,14 @@ pub fn transfer_with_fee_split_proof_data(
         fee_amount_hi,
         &fee_opening_hi,
     );
+    #[cfg(target_arch = "wasm32")]
+    let fee_destination_withdraw_withheld_authority_ciphertext_hi =
+        GroupedElGamalCiphertext2Handles::encryption_with_u64(
+            destination_elgamal_pubkey,
+            withdraw_withheld_authority_elgamal_pubkey,
+            fee_amount_hi,
+            &fee_opening_hi,
+        );
 
     // generate fee ciphertext validity data
     let fee_ciphertext_validity_proof_data =
@@ -245,14 +326,15 @@ pub fn transfer_with_fee_split_proof_data(
         .map_err(TokenProofGenerationError::from)?;
 
     // generate range proof data
-    let delta_fee_complement = MAX_FEE_BASIS_POINTS
+    let delta_fee_complement = MAX_FEE_BASIS_POINTS_SUB_ONE
         .checked_sub(delta_fee)
         .ok_or(TokenProofGenerationError::FeeCalculation)?;
 
-    let max_fee_basis_points_commitment =
-        Pedersen::with(MAX_FEE_BASIS_POINTS, &PedersenOpening::default());
+    let max_fee_basis_points_sub_one_commitment =
+        Pedersen::with(MAX_FEE_BASIS_POINTS_SUB_ONE, &PedersenOpening::default());
     #[allow(clippy::arithmetic_side_effects)]
-    let claimed_complement_commitment = max_fee_basis_points_commitment - claimed_commitment;
+    let claimed_complement_commitment =
+        max_fee_basis_points_sub_one_commitment - claimed_commitment;
     #[allow(clippy::arithmetic_side_effects)]
     let claimed_complement_opening = PedersenOpening::default() - &claimed_opening;
 
@@ -265,6 +347,7 @@ pub fn transfer_with_fee_split_proof_data(
             &claimed_complement_commitment,
             fee_ciphertext_lo.get_commitment(),
             fee_ciphertext_hi.get_commitment(),
+            &net_transfer_amount_commitment,
         ],
         vec![
             new_decrypted_available_balance,
@@ -274,6 +357,7 @@ pub fn transfer_with_fee_split_proof_data(
             delta_fee_complement,
             fee_amount_lo,
             fee_amount_hi,
+            net_transfer_amount,
         ],
         vec![
             REMAINING_BALANCE_BIT_LENGTH,
@@ -283,6 +367,7 @@ pub fn transfer_with_fee_split_proof_data(
             DELTA_BIT_LENGTH,
             FEE_AMOUNT_LO_BITS,
             FEE_AMOUNT_HI_BITS,
+            NET_TRANSFER_AMOUNT_BIT_LENGTH,
         ],
         vec![
             &new_source_opening,
@@ -292,13 +377,14 @@ pub fn transfer_with_fee_split_proof_data(
             &claimed_complement_opening,
             &fee_opening_lo,
             &fee_opening_hi,
+            &net_transfer_amount_opening,
         ],
     )
     .map_err(TokenProofGenerationError::from)?;
 
     Ok(TransferWithFeeProofData {
         equality_proof_data,
-        transfer_amount_ciphertext_validity_proof_data,
+        transfer_amount_ciphertext_validity_proof_data_with_ciphertext,
         percentage_with_cap_proof_data,
         fee_ciphertext_validity_proof_data,
         range_proof_data,
@@ -327,24 +413,15 @@ fn calculate_fee(transfer_amount: u64, fee_rate_basis_points: u16) -> Option<(u6
 
 #[allow(clippy::arithmetic_side_effects)]
 fn compute_delta_commitment_and_opening(
-    combined_commitment: &PedersenCommitment,
-    combined_fee_commitment: &PedersenCommitment,
-    combined_opening: &PedersenOpening,
-    combined_fee_opening: &PedersenOpening,
-    fee_rate_basis_points: u64, // already correct type
+    (combined_commitment, combined_opening): (&PedersenCommitment, &PedersenOpening),
+    (combined_fee_commitment, combined_fee_opening): (&PedersenCommitment, &PedersenOpening),
+    fee_rate_basis_points: u16,
 ) -> (PedersenCommitment, PedersenOpening) {
     let fee_rate_scalar = Scalar::from(fee_rate_basis_points);
-    let max_fee_scalar = Scalar::from(MAX_FEE_BASIS_POINTS);
-
-    let delta_commitment = PedersenCommitment::new(
-        combined_fee_commitment.get_point() * &max_fee_scalar
-            - combined_commitment.get_point() * &fee_rate_scalar,
-    );
-
-    let delta_opening = PedersenOpening::new(
-        combined_fee_opening.get_scalar() * &max_fee_scalar
-            - combined_opening.get_scalar() * &fee_rate_scalar,
-    );
+    let delta_commitment = combined_fee_commitment * Scalar::from(MAX_FEE_BASIS_POINTS)
+        - combined_commitment * fee_rate_scalar;
+    let delta_opening = combined_fee_opening * Scalar::from(MAX_FEE_BASIS_POINTS)
+        - combined_opening * fee_rate_scalar;
 
     (delta_commitment, delta_opening)
 }

@@ -1,13 +1,15 @@
 use {
-    solana_poh::poh_recorder::{BankStart, PohRecorder},
-    solana_sdk::{
-        clock::{
-            DEFAULT_TICKS_PER_SLOT, FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET,
-            HOLD_TRANSACTIONS_SLOT_OFFSET,
-        },
-        pubkey::Pubkey,
+    solana_clock::{
+        DEFAULT_TICKS_PER_SLOT, FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET,
+        HOLD_TRANSACTIONS_SLOT_OFFSET,
     },
-    std::sync::{Arc, RwLock},
+    solana_poh::poh_recorder::{BankStart, PohRecorder},
+    solana_pubkey::Pubkey,
+    solana_unified_scheduler_pool::{BankingStageMonitor, BankingStageStatus},
+    std::{
+        sync::{Arc, RwLock},
+        time::{Duration, Instant},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -28,10 +30,14 @@ impl BufferedPacketsDecision {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, derive_more::Debug)]
 pub struct DecisionMaker {
     my_pubkey: Pubkey,
+    #[debug("{poh_recorder:p}")]
     poh_recorder: Arc<RwLock<PohRecorder>>,
+
+    cached_decision: Option<BufferedPacketsDecision>,
+    last_decision_time: Instant,
 }
 
 impl DecisionMaker {
@@ -39,10 +45,28 @@ impl DecisionMaker {
         Self {
             my_pubkey,
             poh_recorder,
+            cached_decision: None,
+            last_decision_time: Instant::now(),
         }
     }
 
-    pub(crate) fn make_consume_or_forward_decision(&self) -> BufferedPacketsDecision {
+    pub(crate) fn make_consume_or_forward_decision(&mut self) -> BufferedPacketsDecision {
+        const CACHE_DURATION: Duration = Duration::from_millis(5);
+        let now = Instant::now();
+
+        // If there is a cached decision that has not expired, return it now.
+        if let Some(decision) = &self.cached_decision {
+            if now.duration_since(self.last_decision_time) < CACHE_DURATION {
+                return decision.clone();
+            }
+        }
+
+        self.last_decision_time = now;
+        self.cached_decision = Some(self.make_consume_or_forward_decision_no_cache());
+        self.cached_decision.as_ref().unwrap().clone()
+    }
+
+    fn make_consume_or_forward_decision_no_cache(&self) -> BufferedPacketsDecision {
         let decision;
         {
             let poh_recorder = self.poh_recorder.read().unwrap();
@@ -112,15 +136,28 @@ impl DecisionMaker {
     }
 }
 
+impl BankingStageMonitor for DecisionMaker {
+    fn status(&mut self) -> BankingStageStatus {
+        if matches!(
+            self.make_consume_or_forward_decision(),
+            BufferedPacketsDecision::Forward,
+        ) {
+            BankingStageStatus::Inactive
+        } else {
+            BankingStageStatus::Active
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         core::panic,
+        solana_clock::NUM_CONSECUTIVE_LEADER_SLOTS,
         solana_ledger::{blockstore::Blockstore, genesis_utils::create_genesis_config},
         solana_poh::poh_recorder::create_test_recorder,
         solana_runtime::bank::Bank,
-        solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS,
         std::{
             env::temp_dir,
             sync::{atomic::Ordering, Arc},
@@ -148,10 +185,10 @@ mod tests {
     #[test]
     fn test_make_consume_or_forward_decision() {
         let genesis_config = create_genesis_config(2).genesis_config;
-        let bank = Bank::new_no_wallclock_throttle_for_tests(&genesis_config).0;
+        let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);
         let ledger_path = temp_dir();
         let blockstore = Arc::new(Blockstore::open(ledger_path.as_path()).unwrap());
-        let (exit, poh_recorder, poh_service, _entry_receiver) =
+        let (exit, poh_recorder, _transaction_recorder, poh_service, _entry_receiver) =
             create_test_recorder(bank.clone(), blockstore, None, None);
         // Drop the poh service immediately to avoid potential ticking
         exit.store(true, Ordering::Relaxed);
@@ -169,7 +206,7 @@ mod tests {
                 .write()
                 .unwrap()
                 .set_bank_for_test(bank.clone());
-            let decision = decision_maker.make_consume_or_forward_decision();
+            let decision = decision_maker.make_consume_or_forward_decision_no_cache();
             assert_matches!(decision, BufferedPacketsDecision::Consume(_));
         }
 
@@ -183,7 +220,7 @@ mod tests {
                     next_leader_slot + NUM_CONSECUTIVE_LEADER_SLOTS,
                 )),
             );
-            let decision = decision_maker.make_consume_or_forward_decision();
+            let decision = decision_maker.make_consume_or_forward_decision_no_cache();
             assert!(
                 matches!(decision, BufferedPacketsDecision::Hold),
                 "next_leader_slot_offset: {next_leader_slot_offset}",
@@ -200,7 +237,7 @@ mod tests {
                     next_leader_slot + NUM_CONSECUTIVE_LEADER_SLOTS + 1,
                 )),
             );
-            let decision = decision_maker.make_consume_or_forward_decision();
+            let decision = decision_maker.make_consume_or_forward_decision_no_cache();
             assert!(
                 matches!(decision, BufferedPacketsDecision::ForwardAndHold),
                 "next_leader_slot_offset: {next_leader_slot_offset}",
@@ -210,15 +247,15 @@ mod tests {
         // Known leader, not me - Forward
         {
             poh_recorder.write().unwrap().reset(bank, None);
-            let decision = decision_maker.make_consume_or_forward_decision();
+            let decision = decision_maker.make_consume_or_forward_decision_no_cache();
             assert_matches!(decision, BufferedPacketsDecision::Forward);
         }
     }
 
     #[test]
     fn test_should_process_or_forward_packets() {
-        let my_pubkey = solana_sdk::pubkey::new_rand();
-        let my_pubkey1 = solana_sdk::pubkey::new_rand();
+        let my_pubkey = solana_pubkey::new_rand();
+        let my_pubkey1 = solana_pubkey::new_rand();
         let bank = Arc::new(Bank::default_for_tests());
         let bank_start = Some(BankStart {
             working_bank: bank,

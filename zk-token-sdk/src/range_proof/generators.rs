@@ -1,10 +1,10 @@
 use {
     crate::range_proof::errors::RangeProofGeneratorError,
-    curve25519_dalek::ristretto::RistrettoPoint,
-    sha3::{
-        digest::{ExtendableOutput, Update},
-        Shake256
+    curve25519_dalek::{
+        digest::{ExtendableOutput, Update, XofReader},
+        ristretto::RistrettoPoint,
     },
+    sha3::{Shake256, Shake256Reader},
 };
 
 #[cfg(not(target_os = "solana"))]
@@ -12,7 +12,7 @@ const MAX_GENERATOR_LENGTH: usize = u32::MAX as usize;
 
 /// Generators for Pedersen vector commitments that are used for inner-product proofs.
 struct GeneratorsChain {
-    reader: Box<dyn sha3::digest::XofReader>,
+    reader: Shake256Reader,
 }
 
 impl GeneratorsChain {
@@ -23,7 +23,7 @@ impl GeneratorsChain {
         shake.update(label);
 
         GeneratorsChain {
-            reader: Box::new(shake.finalize_xof()),
+            reader: shake.finalize_xof(),
         }
     }
 
@@ -55,7 +55,7 @@ impl Iterator for GeneratorsChain {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (usize::max_value(), None)
+        (usize::MAX, None)
     }
 }
 
@@ -96,13 +96,13 @@ impl BulletproofGens {
         }
 
         self.G_vec.extend(
-            &mut GeneratorsChain::new(&[b'G'])
+            &mut GeneratorsChain::new(b"G")
                 .fast_forward(self.gens_capacity)
                 .take(new_capacity - self.gens_capacity),
         );
 
         self.H_vec.extend(
-            &mut GeneratorsChain::new(&[b'H'])
+            &mut GeneratorsChain::new(b"H")
                 .fast_forward(self.gens_capacity)
                 .take(new_capacity - self.gens_capacity),
         );
