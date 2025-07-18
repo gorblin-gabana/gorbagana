@@ -28,33 +28,33 @@ impl FromClapArgMatches for RepairShredFromPeerArgs {
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command<'a>() -> Command {
+    Command::new(COMMAND)
         .about("Request a repair from the specified validator")
         .arg(
-            Arg::with_name("pubkey")
+            Arg::new("pubkey")
                 .long("pubkey")
                 .value_name("PUBKEY")
                 .required(false)
-                .takes_value(true)
+                
                 .validator(is_pubkey)
                 .help("Identity pubkey of the validator to repair from"),
         )
         .arg(
-            Arg::with_name("slot")
+            Arg::new("slot")
                 .long("slot")
                 .value_name("SLOT")
                 .required(true)
-                .takes_value(true)
+                
                 .validator(is_parsable::<u64>)
                 .help("Slot to repair"),
         )
         .arg(
-            Arg::with_name("shred")
+            Arg::new("shred")
                 .long("shred")
                 .value_name("SHRED")
                 .required(true)
-                .takes_value(true)
+                
                 .validator(is_parsable::<u64>)
                 .help("Shred to repair"),
         )

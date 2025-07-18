@@ -1,8 +1,8 @@
 [package]
-name = "agave-validator"
-description = "Blockchain, Rebuilt for Scale"
-documentation = "https://docs.rs/agave-validator"
-default-run = "agave-validator"
+name = "gorb-validator"
+description = "Gorbchain Validator - Blockchain, Rebuilt for Scale"
+documentation = "https://docs.rs/gorb-validator"
+default-run = "gorb-validator"
 version = { workspace = true }
 authors = { workspace = true }
 repository = { workspace = true }

@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, App, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command},
     std::path::Path,
 };
 
@@ -17,18 +17,18 @@ pub struct SetLogFilterArgs {
 impl FromClapArgMatches for SetLogFilterArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(SetLogFilterArgs {
-            filter: value_t!(matches, "filter", String)?,
+            filter: matches.get_one::<String>("filter").unwrap().clone(),
         })
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Adjust the validator log filter")
         .arg(
-            Arg::with_name("filter")
-                .takes_value(true)
+            Arg::new("filter")
                 .index(1)
+                .required(true)
                 .help("New filter using the same format as the RUST_LOG environment variable"),
         )
         .after_help("Note: the new filter only applies to the currently running validator instance")

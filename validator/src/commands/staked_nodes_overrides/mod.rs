@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{App, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command},
     std::path::Path,
 };
 
@@ -18,20 +18,19 @@ impl FromClapArgMatches for StakedNodesOverridesArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(StakedNodesOverridesArgs {
             path: matches
-                .value_of("path")
+                .get_one::<String>("path")
                 .expect("path is required")
                 .to_string(),
         })
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Overrides stakes of specific node identities.")
         .arg(
-            Arg::with_name("path")
+            Arg::new("path")
                 .value_name("PATH")
-                .takes_value(true)
                 .required(true)
                 .help(
                     "Provide path to a file with custom overrides for stakes of specific validator identities.",

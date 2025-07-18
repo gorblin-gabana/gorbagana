@@ -22,8 +22,8 @@ pub fn main() {
     let matches = cli_app.get_matches();
     warn_for_deprecated_arguments(&matches);
 
-    let socket_addr_space = SocketAddrSpace::new(matches.is_present("allow_private_addr"));
-    let ledger_path = PathBuf::from(matches.value_of("ledger_path").unwrap());
+    let socket_addr_space = SocketAddrSpace::new(matches.get_flag("allow_private_addr"));
+    let ledger_path = PathBuf::from(matches.get_one::<String>("ledger_path").unwrap());
 
     match matches.subcommand() {
         ("init", _) => commands::run::execute(

@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, App, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command},
     solana_clap_utils::input_validators::is_keypair,
     solana_keypair::read_keypair,
     solana_signer::Signer,
@@ -22,27 +22,26 @@ pub struct SetIdentityArgs {
 impl FromClapArgMatches for SetIdentityArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(SetIdentityArgs {
-            identity: value_t!(matches, "identity", String).ok(),
-            require_tower: matches.is_present("require_tower"),
+            identity: matches.get_one::<String>("identity").cloned(),
+            require_tower: matches.get_flag("require_tower"),
         })
     }
 }
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Set the validator identity")
         .arg(
-            Arg::with_name("identity")
+            Arg::new("identity")
                 .index(1)
                 .value_name("KEYPAIR")
                 .required(false)
-                .takes_value(true)
-                .validator(is_keypair)
+                .value_parser(|s: &str| is_keypair(s.to_string()))
                 .help("Path to validator identity keypair [default: read JSON keypair from stdin]"),
         )
         .arg(
-            clap::Arg::with_name("require_tower")
+            clap::Arg::new("require_tower")
                 .long("require-tower")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Refuse to set the validator identity if saved tower state is not found"),
         )
         .after_help(

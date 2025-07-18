@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{values_t, App, AppSettings, Arg, ArgMatches, SubCommand},
+    clap::{values_t, Arg, ArgMatches, Command, ArgAction},
     itertools::Itertools,
     solana_clap_utils::input_validators::is_pubkey,
     solana_cli_output::OutputFormat,
@@ -21,7 +21,11 @@ pub struct RepairWhitelistGetArgs {
 impl FromClapArgMatches for RepairWhitelistGetArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(RepairWhitelistGetArgs {
-            output: OutputFormat::from_matches(matches, "output", false),
+            output: match matches.get_one::<String>("output") {
+                Some(output) if output == "json" => OutputFormat::Json,
+                Some(output) if output == "json-compact" => OutputFormat::JsonCompact,
+                _ => OutputFormat::Display,
+            },
         })
     }
 }
@@ -41,34 +45,32 @@ impl FromClapArgMatches for RepairWhitelistSetArgs {
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Manage the validator's repair protocol whitelist")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .setting(AppSettings::InferSubcommands)
+        .subcommand_required(true)
+        .arg_required_else_help(true)
         .subcommand(
-            SubCommand::with_name("get")
+            Command::new("get")
                 .about("Display the validator's repair protocol whitelist")
                 .arg(
-                    Arg::with_name("output")
+                    Arg::new("output")
                         .long("output")
-                        .takes_value(true)
                         .value_name("MODE")
-                        .possible_values(&["json", "json-compact"])
+                        .value_parser(["json", "json-compact"])
                         .help("Output display mode"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name("set")
+            Command::new("set")
                 .about("Set the validator's repair protocol whitelist")
-                .setting(AppSettings::ArgRequiredElseHelp)
+                .arg_required_else_help(true)
                 .arg(
-                    Arg::with_name("whitelist")
+                    Arg::new("whitelist")
                         .long("whitelist")
-                        .validator(is_pubkey)
+                        .value_parser(clap::value_parser!(String))
                         .value_name("VALIDATOR IDENTITY")
-                        .multiple(true)
-                        .takes_value(true)
+                        .action(ArgAction::Append)
                         .required(true)
                         .help("Set the validator's repair protocol whitelist"),
                 )
@@ -77,7 +79,7 @@ pub fn command<'a>() -> App<'a, 'a> {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("remove-all")
+            Command::new("remove-all")
                 .about("Clear the validator's repair protocol whitelist")
                 .after_help(
                     "Note: repair protocol whitelist changes only apply to the currently running validator instance",
@@ -87,7 +89,7 @@ pub fn command<'a>() -> App<'a, 'a> {
 
 pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
     match matches.subcommand() {
-        ("get", Some(subcommand_matches)) => {
+        Some(("get", subcommand_matches)) => {
             let repair_whitelist_get_args =
                 RepairWhitelistGetArgs::from_clap_arg_match(subcommand_matches)?;
 
@@ -102,7 +104,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
                     .formatted_string(&repair_whitelist)
             );
         }
-        ("set", Some(subcommand_matches)) => {
+        Some(("set", subcommand_matches)) => {
             let RepairWhitelistSetArgs { whitelist } =
                 RepairWhitelistSetArgs::from_clap_arg_match(subcommand_matches)?;
 
@@ -112,7 +114,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
 
             set_repair_whitelist(ledger_path, whitelist)?;
         }
-        ("remove-all", _) => {
+        Some(("remove-all", _)) => {
             set_repair_whitelist(ledger_path, Vec::default())?;
         }
         _ => unreachable!(),

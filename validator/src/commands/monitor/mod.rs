@@ -4,8 +4,8 @@ use {
     std::{path::Path, time::Duration},
 };
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name("monitor").about("Monitor the validator")
+pub fn command<'a>() -> Command {
+    Command::new("monitor").about("Monitor the validator")
 }
 
 pub fn execute(_matches: &ArgMatches, ledger_path: &Path) -> Result<()> {

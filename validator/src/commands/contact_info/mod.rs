@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{App, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command, ArgAction},
     solana_cli_output::OutputFormat,
     std::path::Path,
 };
@@ -18,20 +18,23 @@ pub struct ContactInfoArgs {
 impl FromClapArgMatches for ContactInfoArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(ContactInfoArgs {
-            output: OutputFormat::from_matches(matches, "output", false),
+            output: match matches.get_one::<String>("output") {
+                Some(output) if output == "json" => OutputFormat::Json,
+                Some(output) if output == "json-compact" => OutputFormat::JsonCompact,
+                _ => OutputFormat::Display,
+            },
         })
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Display the validator's contact info")
         .arg(
-            Arg::with_name("output")
+            Arg::new("output")
                 .long("output")
-                .takes_value(true)
                 .value_name("MODE")
-                .possible_values(&["json", "json-compact"])
+                .value_parser(["json", "json-compact"])
                 .help("Output display mode"),
         )
 }

@@ -5,7 +5,7 @@ use {
         admin_rpc_service,
         commands::{monitor, wait_for_restart_window, Error, FromClapArgMatches, Result},
     },
-    clap::{value_t_or_exit, App, Arg, ArgMatches, SubCommand},
+    clap::{value_t_or_exit, Arg, ArgMatches, Command, ArgAction},
     solana_clap_utils::input_validators::{is_parsable, is_valid_percentage},
     std::path::Path,
 };
@@ -35,55 +35,55 @@ pub struct ExitArgs {
 
 impl FromClapArgMatches for ExitArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
-        let post_exit_action = if matches.is_present("monitor") {
+        let post_exit_action = if matches.get_flag("monitor") {
             Some(PostExitAction::Monitor)
-        } else if matches.is_present("wait_for_exit") {
+        } else if matches.get_flag("wait_for_exit") {
             Some(PostExitAction::Wait)
         } else {
             None
         };
 
         Ok(ExitArgs {
-            force: matches.is_present("force"),
+            force: matches.get_flag("force"),
             post_exit_action,
             min_idle_time: value_t_or_exit!(matches, "min_idle_time", usize),
             max_delinquent_stake: value_t_or_exit!(matches, "max_delinquent_stake", u8),
-            skip_new_snapshot_check: matches.is_present("skip_new_snapshot_check"),
-            skip_health_check: matches.is_present("skip_health_check"),
+            skip_new_snapshot_check: matches.get_flag("skip_new_snapshot_check"),
+            skip_health_check: matches.get_flag("skip_health_check"),
         })
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Send an exit request to the validator")
         .arg(
-            Arg::with_name("force")
-                .short("f")
+            Arg::new("force")
+                .short('f')
                 .long("force")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help(
                     "Request the validator exit immediately instead of waiting for a restart window",
                 ),
         )
         .arg(
-            Arg::with_name("monitor")
-                .short("m")
+            Arg::new("monitor")
+                .short('m')
                 .long("monitor")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Monitor the validator after sending the exit request"),
         )
         .arg(
-            Arg::with_name("wait_for_exit")
+            Arg::new("wait_for_exit")
                 .long("wait-for-exit")
+                .action(ArgAction::SetTrue)
                 .conflicts_with("monitor")
                 .help("Wait for the validator to terminate after sending the exit request"),
         )
         .arg(
-            Arg::with_name("min_idle_time")
+            Arg::new("min_idle_time")
                 .long("min-idle-time")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
+                .value_parser(clap::value_parser!(usize))
                 .value_name("MINUTES")
                 .default_value(DEFAULT_MIN_IDLE_TIME)
                 .help(
@@ -91,22 +91,23 @@ pub fn command<'a>() -> App<'a, 'a> {
                 ),
         )
         .arg(
-            Arg::with_name("max_delinquent_stake")
+            Arg::new("max_delinquent_stake")
                 .long("max-delinquent-stake")
-                .takes_value(true)
-                .validator(is_valid_percentage)
+                .value_parser(clap::value_parser!(u8))
                 .default_value(DEFAULT_MAX_DELINQUENT_STAKE)
                 .value_name("PERCENT")
                 .help("The maximum delinquent stake % permitted for an exit"),
         )
         .arg(
-            Arg::with_name("skip_new_snapshot_check")
+            Arg::new("skip_new_snapshot_check")
                 .long("skip-new-snapshot-check")
+                .action(ArgAction::SetTrue)
                 .help("Skip check for a new snapshot"),
         )
         .arg(
-            Arg::with_name("skip_health_check")
+            Arg::new("skip_health_check")
                 .long("skip-health-check")
+                .action(ArgAction::SetTrue)
                 .help("Skip health check"),
         )
 }

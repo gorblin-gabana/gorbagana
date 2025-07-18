@@ -55,16 +55,16 @@ fn main() {
     let version = solana_version::version!();
     let matches = cli::test_app(version, &default_args).get_matches();
 
-    let output = if matches.is_present("quiet") {
+    let output = if matches.get_flag("quiet") {
         Output::None
-    } else if matches.is_present("log") {
+    } else if matches.get_flag("log") {
         Output::Log
     } else {
         Output::Dashboard
     };
 
     let ledger_path = value_t_or_exit!(matches, "ledger_path", PathBuf);
-    let reset_ledger = matches.is_present("reset");
+    let reset_ledger = matches.get_flag("reset");
 
     let indexes: HashSet<AccountIndex> = matches
         .values_of("account_indexes")
@@ -135,7 +135,7 @@ fn main() {
 
     // TODO: Ideally test-validator should *only* allow private addresses.
     let socket_addr_space = SocketAddrSpace::new(/*allow_private_addr=*/ true);
-    let cli_config = if let Some(config_file) = matches.value_of("config_file") {
+    let cli_config = if let Some(config_file) = matches.get_one::<String>("config_file") {
         solana_cli_config::Config::load(config_file).unwrap_or_default()
     } else {
         solana_cli_config::Config::default()
@@ -154,13 +154,13 @@ fn main() {
         });
 
     let rpc_port = value_t_or_exit!(matches, "rpc_port", u16);
-    let enable_vote_subscription = matches.is_present("rpc_pubsub_enable_vote_subscription");
-    let enable_block_subscription = matches.is_present("rpc_pubsub_enable_block_subscription");
+    let enable_vote_subscription = matches.get_flag("rpc_pubsub_enable_vote_subscription");
+    let enable_block_subscription = matches.get_flag("rpc_pubsub_enable_block_subscription");
     let faucet_port = value_t_or_exit!(matches, "faucet_port", u16);
     let ticks_per_slot = value_t!(matches, "ticks_per_slot", u64).ok();
     let slots_per_epoch = value_t!(matches, "slots_per_epoch", Slot).ok();
     let inflation_fixed = value_t!(matches, "inflation_fixed", f64).ok();
-    let gossip_host = matches.value_of("gossip_host").map(|gossip_host| {
+    let gossip_host = matches.get_one::<String>("gossip_host").map(|gossip_host| {
         warn!("--gossip-host is deprecated. Use --bind-address instead.");
         solana_net_utils::parse_host(gossip_host).unwrap_or_else(|err| {
             eprintln!("Failed to parse --gossip-host: {err}");
@@ -168,7 +168,7 @@ fn main() {
         })
     });
     let gossip_port = value_t!(matches, "gossip_port", u16).ok();
-    let dynamic_port_range = matches.value_of("dynamic_port_range").map(|port_range| {
+    let dynamic_port_range = matches.get_one::<String>("dynamic_port_range").map(|port_range| {
         solana_net_utils::parse_port_range(port_range).unwrap_or_else(|| {
             eprintln!("Failed to parse --dynamic-port-range");
             exit(1);
@@ -176,7 +176,7 @@ fn main() {
     });
     let bind_address = solana_net_utils::parse_host(
         matches
-            .value_of("bind_address")
+            .get_one::<String>("bind_address")
             .expect("Bind address has default value"),
     )
     .unwrap_or_else(|err| {
@@ -300,10 +300,10 @@ fn main() {
         .map(|v| v.into_iter().collect())
         .unwrap_or_default();
 
-    let clone_feature_set = matches.is_present("clone_feature_set");
+    let clone_feature_set = matches.get_flag("clone_feature_set");
 
-    let warp_slot = if matches.is_present("warp_slot") {
-        Some(match matches.value_of("warp_slot") {
+    let warp_slot = if matches.get_flag("warp_slot") {
+        Some(match matches.get_one::<String>("warp_slot") {
             Some(_) => value_t_or_exit!(matches, "warp_slot", Slot),
             None => cluster_rpc_client
                 .as_ref()
@@ -386,7 +386,7 @@ fn main() {
             ("faucet_sol", "--faucet-sol"),
             ("deactivate_feature", "--deactivate-feature"),
         ] {
-            if matches.is_present(name) {
+            if matches.get_flag(name) {
                 println!("{long} argument ignored, ledger already exists");
             }
         }
@@ -409,7 +409,7 @@ fn main() {
     let admin_service_post_init = Arc::new(RwLock::new(None));
     // If geyser_plugin_config value is invalid, the validator will exit when the values are extracted below
     let (rpc_to_plugin_manager_sender, rpc_to_plugin_manager_receiver) =
-        if matches.is_present("geyser_plugin_config") {
+        if matches.get_flag("geyser_plugin_config") {
             let (sender, receiver) = unbounded();
             (Some(sender), Some(receiver))
         } else {
@@ -440,11 +440,11 @@ fn main() {
         None
     };
 
-    let rpc_bigtable_config = if matches.is_present("enable_rpc_bigtable_ledger_storage")
-        || matches.is_present("enable_bigtable_ledger_upload")
+    let rpc_bigtable_config = if matches.get_flag("enable_rpc_bigtable_ledger_storage")
+        || matches.get_flag("enable_bigtable_ledger_upload")
     {
         Some(RpcBigtableConfig {
-            enable_bigtable_ledger_upload: matches.is_present("enable_bigtable_ledger_upload"),
+            enable_bigtable_ledger_upload: matches.get_flag("enable_bigtable_ledger_upload"),
             bigtable_instance_name: value_t_or_exit!(matches, "rpc_bigtable_instance", String),
             bigtable_app_profile_id: value_t_or_exit!(
                 matches,
@@ -588,7 +588,7 @@ fn main() {
 
     genesis.bind_ip_addr(bind_address);
 
-    if matches.is_present("geyser_plugin_config") {
+    if matches.get_flag("geyser_plugin_config") {
         genesis.geyser_plugin_config_files = Some(
             values_t_or_exit!(matches, "geyser_plugin_config", String)
                 .into_iter()

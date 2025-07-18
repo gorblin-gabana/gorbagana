@@ -134,7 +134,7 @@ pub fn execute(
     info!("{} {}", crate_name!(), solana_version);
     info!("Starting validator with: {:#?}", std::env::args_os());
 
-    let cuda = matches.get_flag("cuda");
+    let cuda = matches.is_present("cuda");
     if cuda {
         solana_perf::perf_libs::init_cuda();
         enable_recycler_warming();
@@ -144,34 +144,31 @@ pub fn execute(
 
     let authorized_voter_keypairs = keypairs_of(matches, "authorized_voter_keypairs")
         .map(|keypairs| keypairs.into_iter().map(Arc::new).collect())
-        .unwrap_or_else(|| {
-            // TODO: Replace with proper keypair parsing when clap-utils is updated
-            let identity_path = matches.get_one::<String>("identity").expect("identity");
-            let keypair = solana_sdk::signer::keypair::read_keypair_file(identity_path)
-                .expect("Failed to read identity keypair");
-            vec![Arc::new(keypair)]
-        });
+        .unwrap_or_else(|| vec![Arc::new(keypair_of(matches, "identity").expect("identity"))]);
     let authorized_voter_keypairs = Arc::new(RwLock::new(authorized_voter_keypairs));
 
     let staked_nodes_overrides_path = matches
-        .get_one::<String>("staked_nodes_overrides")
+        .value_of("staked_nodes_overrides")
         .map(str::to_string);
     let staked_nodes_overrides = Arc::new(RwLock::new(
         match &staked_nodes_overrides_path {
             None => StakedNodesOverrides::default(),
             Some(p) => load_staked_nodes_overrides(p).unwrap_or_else(|err| {
                 error!("Failed to load stake-nodes-overrides from {}: {}", p, err);
-                clap::Error::new(clap::ErrorKind::InvalidValue)
+                clap::Error::with_description(
+                    "Failed to load configuration of stake-nodes-overrides argument",
+                    clap::ErrorKind::InvalidValue,
+                )
                 .exit()
             }),
         }
         .staked_map_id,
     ));
 
-    let init_complete_file = matches.get_one::<String>("init_complete_file");
+    let init_complete_file = matches.value_of("init_complete_file");
 
-    let private_rpc = matches.get_flag("private_rpc");
-    let do_port_check = !matches.get_flag("no_port_check");
+    let private_rpc = matches.is_present("private_rpc");
+    let do_port_check = !matches.is_present("no_port_check");
     let tpu_coalesce = value_t!(matches, "tpu_coalesce_ms", u64)
         .map(Duration::from_millis)
         .unwrap_or(DEFAULT_TPU_COALESCE);
@@ -185,11 +182,11 @@ pub fn execute(
     })?;
 
     let recovery_mode = matches
-        .get_one::<String>("wal_recovery_mode")
-        .map(|s| BlockstoreRecoveryMode::from(s.as_str()));
+        .value_of("wal_recovery_mode")
+        .map(BlockstoreRecoveryMode::from);
 
-    let max_ledger_shreds = if matches.get_flag("limit_ledger_size") {
-        let limit_ledger_size = match matches.get_one::<String>("limit_ledger_size") {
+    let max_ledger_shreds = if matches.is_present("limit_ledger_size") {
+        let limit_ledger_size = match matches.value_of("limit_ledger_size") {
             Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
             None => DEFAULT_MAX_LEDGER_SHREDS,
         };
@@ -205,9 +202,9 @@ pub fn execute(
     };
 
     let column_options = LedgerColumnOptions {
-        compression_type: match matches.get_one::<String>("rocksdb_ledger_compression") {
+        compression_type: match matches.value_of("rocksdb_ledger_compression") {
             None => BlockstoreCompressionType::default(),
-            Some(ledger_compression_string) => match ledger_compression_string.as_str() {
+            Some(ledger_compression_string) => match ledger_compression_string {
                 "none" => BlockstoreCompressionType::None,
                 "snappy" => BlockstoreCompressionType::Snappy,
                 "lz4" => BlockstoreCompressionType::Lz4,
@@ -235,7 +232,7 @@ pub fn execute(
     };
 
     let accounts_hash_cache_path = matches
-        .get_one::<String>("accounts_hash_cache_path")
+        .value_of("accounts_hash_cache_path")
         .map(Into::into)
         .unwrap_or_else(|| ledger_path.join(AccountsDb::DEFAULT_ACCOUNTS_HASH_CACHE_DIR));
     let accounts_hash_cache_path = create_and_canonicalize_directory(&accounts_hash_cache_path)
@@ -246,7 +243,7 @@ pub fn execute(
             )
         })?;
 
-    let debug_keys: Option<Arc<HashSet<_>>> = if matches.get_flag("debug_key") {
+    let debug_keys: Option<Arc<HashSet<_>>> = if matches.is_present("debug_key") {
         Some(Arc::new(
             values_t_or_exit!(matches, "debug_key", Pubkey)
                 .into_iter()
@@ -278,15 +275,15 @@ pub fn execute(
 
     let bind_addresses = {
         let parsed = matches
-            .get_many::<String>("bind_address")
+            .values_of("bind_address")
             .expect("bind_address should always be present due to default")
-            .map(|s| solana_net_utils::parse_host(s))
+            .map(solana_net_utils::parse_host)
             .collect::<Result<Vec<_>, _>>()?;
         BindIpAddrs::new(parsed).map_err(|err| format!("invalid bind_addresses: {err}"))?
     };
 
-    let rpc_bind_address = if matches.get_flag("rpc_bind_address") {
-        solana_net_utils::parse_host(matches.get_one::<String>("rpc_bind_address").unwrap())
+    let rpc_bind_address = if matches.is_present("rpc_bind_address") {
+        solana_net_utils::parse_host(matches.value_of("rpc_bind_address").unwrap())
             .expect("invalid rpc_bind_address")
     } else if private_rpc {
         solana_net_utils::parse_host("127.0.0.1").unwrap()
@@ -298,16 +295,16 @@ pub fn execute(
 
     let account_indexes = process_account_indexes(matches);
 
-    let restricted_repair_only_mode = matches.get_flag("restricted_repair_only_mode");
+    let restricted_repair_only_mode = matches.is_present("restricted_repair_only_mode");
     let accounts_shrink_optimize_total_space =
         value_t_or_exit!(matches, "accounts_shrink_optimize_total_space", bool);
-    let tpu_use_quic = !matches.get_flag("tpu_disable_quic");
+    let tpu_use_quic = !matches.is_present("tpu_disable_quic");
     if !tpu_use_quic {
         warn!("TPU QUIC was disabled via --tpu_disable_quic, this will prevent validator from receiving transactions!");
     }
     let vote_use_quic = value_t_or_exit!(matches, "vote_use_quic", bool);
 
-    let tpu_enable_udp = if matches.get_flag("tpu_enable_udp") {
+    let tpu_enable_udp = if matches.is_present("tpu_enable_udp") {
         warn!("Submission of TPU transactions via UDP is deprecated.");
         true
     } else {
@@ -357,14 +354,14 @@ pub fn execute(
         accounts_index_config.bins = Some(bins);
     }
 
-    accounts_index_config.index_limit_mb = if matches.get_flag("disable_accounts_disk_index") {
+    accounts_index_config.index_limit_mb = if matches.is_present("disable_accounts_disk_index") {
         IndexLimitMb::InMemOnly
     } else {
         IndexLimitMb::Minimal
     };
 
     {
-        let mut accounts_index_paths: Vec<PathBuf> = if matches.get_flag("accounts_index_path") {
+        let mut accounts_index_paths: Vec<PathBuf> = if matches.is_present("accounts_index_path") {
             values_t_or_exit!(matches, "accounts_index_path", String)
                 .into_iter()
                 .map(PathBuf::from)
@@ -420,8 +417,8 @@ pub fn execute(
             }
         });
     let storage_access = matches
-        .get_one::<String>("accounts_db_access_storages_method")
-        .map(|method| match method.as_str() {
+        .value_of("accounts_db_access_storages_method")
+        .map(|method| match method {
             "mmap" => StorageAccess::Mmap,
             "file" => StorageAccess::File,
             _ => {
@@ -432,8 +429,8 @@ pub fn execute(
         .unwrap_or_default();
 
     let scan_filter_for_shrinking = matches
-        .get_one::<String>("accounts_db_scan_filter_for_shrinking")
-        .map(|filter| match filter.as_str() {
+        .value_of("accounts_db_scan_filter_for_shrinking")
+        .map(|filter| match filter {
             "all" => ScanFilter::All,
             "only-abnormal" => ScanFilter::OnlyAbnormal,
             "only-abnormal-with-verify" => ScanFilter::OnlyAbnormalWithVerify,
@@ -469,11 +466,11 @@ pub fn execute(
             usize
         )
         .ok(),
-        exhaustively_verify_refcounts: matches.get_flag("accounts_db_verify_refcounts"),
+        exhaustively_verify_refcounts: matches.is_present("accounts_db_verify_refcounts"),
         storage_access,
         scan_filter_for_shrinking,
         snapshots_use_experimental_accumulator_hash: matches
-            .get_flag("accounts_db_snapshots_use_experimental_accumulator_hash"),
+            .is_present("accounts_db_snapshots_use_experimental_accumulator_hash"),
         num_clean_threads: Some(accounts_db_clean_threads),
         num_foreground_threads: Some(accounts_db_foreground_threads),
         num_hash_threads: Some(accounts_db_hash_threads),
@@ -482,7 +479,7 @@ pub fn execute(
 
     let accounts_db_config = Some(accounts_db_config);
 
-    let on_start_geyser_plugin_config_files = if matches.get_flag("geyser_plugin_config") {
+    let on_start_geyser_plugin_config_files = if matches.is_present("geyser_plugin_config") {
         Some(
             values_t_or_exit!(matches, "geyser_plugin_config", String)
                 .into_iter()
@@ -493,13 +490,13 @@ pub fn execute(
         None
     };
     let starting_with_geyser_plugins: bool = on_start_geyser_plugin_config_files.is_some()
-        || matches.get_flag("geyser_plugin_always_enabled");
+        || matches.is_present("geyser_plugin_always_enabled");
 
-    let rpc_bigtable_config = if matches.get_flag("enable_rpc_bigtable_ledger_storage")
-        || matches.get_flag("enable_bigtable_ledger_upload")
+    let rpc_bigtable_config = if matches.is_present("enable_rpc_bigtable_ledger_storage")
+        || matches.is_present("enable_bigtable_ledger_upload")
     {
         Some(RpcBigtableConfig {
-            enable_bigtable_ledger_upload: matches.get_flag("enable_bigtable_ledger_upload"),
+            enable_bigtable_ledger_upload: matches.is_present("enable_bigtable_ledger_upload"),
             bigtable_instance_name: value_t_or_exit!(matches, "rpc_bigtable_instance_name", String),
             bigtable_app_profile_id: value_t_or_exit!(
                 matches,
@@ -538,17 +535,17 @@ pub fn execute(
         ))?;
     }
     let rpc_send_transaction_tpu_peers = matches
-        .get_many::<String>("rpc_send_transaction_tpu_peer")
+        .values_of("rpc_send_transaction_tpu_peer")
         .map(|values| {
             values
-                .map(|s| solana_net_utils::parse_host_port(s))
+                .map(solana_net_utils::parse_host_port)
                 .collect::<Result<Vec<SocketAddr>, String>>()
         })
         .transpose()
         .map_err(|err| {
             format!("failed to parse rpc send-transaction-service tpu peer address: {err}")
         })?;
-    let rpc_send_transaction_also_leader = matches.get_flag("rpc_send_transaction_also_leader");
+    let rpc_send_transaction_also_leader = matches.is_present("rpc_send_transaction_also_leader");
     let leader_forward_count =
         if rpc_send_transaction_tpu_peers.is_some() && !rpc_send_transaction_also_leader {
             // rpc-sts is configured to send only to specific tpu peers. disable leader forwards
@@ -557,36 +554,36 @@ pub fn execute(
             value_t_or_exit!(matches, "rpc_send_transaction_leader_forward_count", u64)
         };
 
-    let full_api = matches.get_flag("full_rpc_api");
+    let full_api = matches.is_present("full_rpc_api");
 
-    let xdp_interface = matches.get_one::<String>("retransmit_xdp_interface");
-    let xdp_zero_copy = matches.get_flag("retransmit_xdp_zero_copy");
-    let retransmit_xdp = matches.get_one::<String>("retransmit_xdp_cpu_cores").map(|cpus| {
+    let xdp_interface = matches.value_of("retransmit_xdp_interface");
+    let xdp_zero_copy = matches.is_present("retransmit_xdp_zero_copy");
+    let retransmit_xdp = matches.value_of("retransmit_xdp_cpu_cores").map(|cpus| {
         XdpConfig::new(
-            xdp_interface.map(|s| s.as_str()),
+            xdp_interface,
             parse_cpu_ranges(cpus).unwrap(),
             xdp_zero_copy,
         )
     });
 
     let mut validator_config = ValidatorConfig {
-        require_tower: matches.get_flag("require_tower"),
+        require_tower: matches.is_present("require_tower"),
         tower_storage,
         halt_at_slot: value_t!(matches, "dev_halt_at_slot", Slot).ok(),
         expected_genesis_hash: matches
-            .get_one::<String>("expected_genesis_hash")
+            .value_of("expected_genesis_hash")
             .map(|s| Hash::from_str(s).unwrap()),
         expected_bank_hash: matches
-            .get_one::<String>("expected_bank_hash")
+            .value_of("expected_bank_hash")
             .map(|s| Hash::from_str(s).unwrap()),
         expected_shred_version,
         new_hard_forks: hardforks_of(matches, "hard_forks"),
         rpc_config: JsonRpcConfig {
-            enable_rpc_transaction_history: matches.get_flag("enable_rpc_transaction_history"),
+            enable_rpc_transaction_history: matches.is_present("enable_rpc_transaction_history"),
             enable_extended_tx_metadata_storage: matches
-                .get_flag("enable_extended_tx_metadata_storage"),
+                .is_present("enable_extended_tx_metadata_storage"),
             rpc_bigtable_config,
-            faucet_addr: matches.get_one::<String>("rpc_faucet_addr").map(|address| {
+            faucet_addr: matches.value_of("rpc_faucet_addr").map(|address| {
                 solana_net_utils::parse_host_port(address).expect("failed to parse faucet address")
             }),
             full_api,
@@ -605,7 +602,7 @@ pub fn execute(
             rpc_blocking_threads: value_t_or_exit!(matches, "rpc_blocking_threads", usize),
             rpc_niceness_adj: value_t_or_exit!(matches, "rpc_niceness_adj", i8),
             account_indexes: account_indexes.clone(),
-            rpc_scan_and_fix_roots: matches.get_flag("rpc_scan_and_fix_roots"),
+            rpc_scan_and_fix_roots: matches.is_present("rpc_scan_and_fix_roots"),
             max_request_body_size: Some(value_t_or_exit!(
                 matches,
                 "rpc_max_request_body_size",
@@ -625,8 +622,8 @@ pub fn execute(
             )
         }),
         pubsub_config: PubSubConfig {
-            enable_block_subscription: matches.get_flag("rpc_pubsub_enable_block_subscription"),
-            enable_vote_subscription: matches.get_flag("rpc_pubsub_enable_vote_subscription"),
+            enable_block_subscription: matches.is_present("rpc_pubsub_enable_block_subscription"),
+            enable_vote_subscription: matches.is_present("rpc_pubsub_enable_vote_subscription"),
             max_active_subscriptions: value_t_or_exit!(
                 matches,
                 "rpc_pubsub_max_active_subscriptions",
@@ -647,7 +644,7 @@ pub fn execute(
                 .ok()
                 .and_then(NonZeroUsize::new),
         },
-        voting_disabled: matches.get_flag("no_voting") || restricted_repair_only_mode,
+        voting_disabled: matches.is_present("no_voting") || restricted_repair_only_mode,
         wait_for_supermajority: value_t!(matches, "wait_for_supermajority", Slot).ok(),
         known_validators: run_args.known_validators,
         repair_validators,
@@ -655,7 +652,7 @@ pub fn execute(
         gossip_validators,
         max_ledger_shreds,
         blockstore_options,
-        run_verification: !matches.get_flag("skip_startup_ledger_verification"),
+        run_verification: !matches.is_present("skip_startup_ledger_verification"),
         debug_keys,
         contact_debug_interval,
         send_transaction_service_config: send_transaction_service::Config {
@@ -681,29 +678,23 @@ pub fn execute(
             ),
             tpu_peers: rpc_send_transaction_tpu_peers,
         },
-        no_poh_speed_test: matches.get_flag("no_poh_speed_test"),
-        no_os_memory_stats_reporting: matches.get_flag("no_os_memory_stats_reporting"),
-        no_os_network_stats_reporting: matches.get_flag("no_os_network_stats_reporting"),
-        no_os_cpu_stats_reporting: matches.get_flag("no_os_cpu_stats_reporting"),
-        no_os_disk_stats_reporting: matches.get_flag("no_os_disk_stats_reporting"),
-        poh_pinned_cpu_core: matches
-            .get_one::<String>("poh_pinned_cpu_core")
-            .and_then(|s| s.parse().ok())
+        no_poh_speed_test: matches.is_present("no_poh_speed_test"),
+        no_os_memory_stats_reporting: matches.is_present("no_os_memory_stats_reporting"),
+        no_os_network_stats_reporting: matches.is_present("no_os_network_stats_reporting"),
+        no_os_cpu_stats_reporting: matches.is_present("no_os_cpu_stats_reporting"),
+        no_os_disk_stats_reporting: matches.is_present("no_os_disk_stats_reporting"),
+        poh_pinned_cpu_core: value_of(matches, "poh_pinned_cpu_core")
             .unwrap_or(poh_service::DEFAULT_PINNED_CPU_CORE),
-        poh_hashes_per_batch: matches
-            .get_one::<String>("poh_hashes_per_batch")
-            .and_then(|s| s.parse().ok())
+        poh_hashes_per_batch: value_of(matches, "poh_hashes_per_batch")
             .unwrap_or(poh_service::DEFAULT_HASHES_PER_BATCH),
-        process_ledger_before_services: matches.get_flag("process_ledger_before_services"),
+        process_ledger_before_services: matches.is_present("process_ledger_before_services"),
         accounts_db_config,
         accounts_db_skip_shrink: true,
-        accounts_db_force_initial_clean: matches.get_flag("no_skip_initial_accounts_db_clean"),
+        accounts_db_force_initial_clean: matches.is_present("no_skip_initial_accounts_db_clean"),
         tpu_coalesce,
-        no_wait_for_vote_to_start_leader: matches.get_flag("no_wait_for_vote_to_start_leader"),
+        no_wait_for_vote_to_start_leader: matches.is_present("no_wait_for_vote_to_start_leader"),
         runtime_config: RuntimeConfig {
-            log_messages_bytes_limit: matches
-                .get_one::<String>("log_messages_bytes_limit")
-                .and_then(|s| s.parse().ok()),
+            log_messages_bytes_limit: value_of(matches, "log_messages_bytes_limit"),
             ..RuntimeConfig::default()
         },
         staked_nodes_overrides: staked_nodes_overrides.clone(),
@@ -718,11 +709,11 @@ pub fn execute(
         replay_transactions_threads,
         tvu_shred_sigverify_threads: tvu_sigverify_threads,
         delay_leader_block_for_pending_fork: matches
-            .get_flag("delay_leader_block_for_pending_fork"),
+            .is_present("delay_leader_block_for_pending_fork"),
         wen_restart_proto_path: value_t!(matches, "wen_restart", PathBuf).ok(),
         wen_restart_coordinator: value_t!(matches, "wen_restart_coordinator", Pubkey).ok(),
         retransmit_xdp,
-        use_tpu_client_next: !matches.get_flag("use_connection_cache"),
+        use_tpu_client_next: !matches.is_present("use_connection_cache"),
         ..ValidatorConfig::default()
     };
 
@@ -744,10 +735,7 @@ pub fn execute(
         set_cpu_affinity(available.into_iter().copied()).unwrap();
     }
 
-    let vote_account = matches
-        .get_one::<String>("vote_account")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| {
+    let vote_account = pubkey_of(matches, "vote_account").unwrap_or_else(|| {
         if !validator_config.voting_disabled {
             warn!("--vote-account not specified, validator will not vote");
             validator_config.voting_disabled = true;
@@ -756,7 +744,7 @@ pub fn execute(
     });
 
     let dynamic_port_range =
-        solana_net_utils::parse_port_range(matches.get_one::<String>("dynamic_port_range").unwrap())
+        solana_net_utils::parse_port_range(matches.value_of("dynamic_port_range").unwrap())
             .expect("invalid dynamic_port_range");
 
     let account_paths: Vec<PathBuf> =
@@ -805,7 +793,7 @@ pub fn execute(
     let maximum_snapshot_download_abort =
         value_t_or_exit!(matches, "maximum_snapshot_download_abort", u64);
 
-    let snapshots_dir = if let Some(snapshots) = matches.get_one::<String>("snapshots") {
+    let snapshots_dir = if let Some(snapshots) = matches.value_of("snapshots") {
         Path::new(snapshots)
     } else {
         &ledger_path
@@ -837,7 +825,7 @@ pub fn execute(
     })?;
 
     let full_snapshot_archives_dir =
-        if let Some(full_snapshot_archive_path) = matches.get_one::<String>("full_snapshot_archive_path") {
+        if let Some(full_snapshot_archive_path) = matches.value_of("full_snapshot_archive_path") {
             PathBuf::from(full_snapshot_archive_path)
         } else {
             snapshots_dir.clone()
@@ -850,7 +838,7 @@ pub fn execute(
     })?;
 
     let incremental_snapshot_archives_dir = if let Some(incremental_snapshot_archive_path) =
-        matches.get_one::<String>("incremental_snapshot_archive_path")
+        matches.value_of("incremental_snapshot_archive_path")
     {
         PathBuf::from(incremental_snapshot_archive_path)
     } else {
@@ -875,7 +863,7 @@ pub fn execute(
     };
 
     let snapshot_version = matches
-        .get_one::<String>("snapshot_version")
+        .value_of("snapshot_version")
         .map(|value| {
             value
                 .parse::<SnapshotVersion>()
@@ -885,7 +873,7 @@ pub fn execute(
         .unwrap_or(SnapshotVersion::default());
 
     let (full_snapshot_archive_interval, incremental_snapshot_archive_interval) =
-        if matches.get_flag("no_snapshots") {
+        if matches.is_present("no_snapshots") {
             // snapshots are disabled
             (SnapshotInterval::Disabled, SnapshotInterval::Disabled)
         } else {
@@ -907,7 +895,7 @@ pub fn execute(
                     // incremental snapshots are *disabled*
                     // use --snapshot-interval-slots for the *full* snapshot interval
                     // also warn if --full-snapshot-interval-slots was specified
-                    if matches.get_one::<String>("full_snapshot_interval_slots").is_some() {
+                    if matches.occurrences_of("full_snapshot_interval_slots") > 0 {
                         warn!(
                             "Incremental snapshots are disabled, yet \
                              --full-snapshot-interval-slots was specified! \
@@ -1008,14 +996,14 @@ pub fn execute(
         value_t!(matches, "unified_scheduler_handler_threads", usize).ok();
 
     let public_rpc_addr = matches
-        .get_one::<String>("public_rpc_addr")
+        .value_of("public_rpc_addr")
         .map(|addr| {
             solana_net_utils::parse_host_port(addr)
                 .map_err(|err| format!("failed to parse public rpc address: {err}"))
         })
         .transpose()?;
 
-    if !matches.get_flag("no_os_network_limits_test") {
+    if !matches.is_present("no_os_network_limits_test") {
         if SystemMonitorService::check_os_network_limits() {
             info!("OS network limits test passed.");
         } else {
@@ -1061,7 +1049,7 @@ pub fn execute(
     );
 
     let gossip_host = matches
-        .get_one::<String>("gossip_host")
+        .value_of("gossip_host")
         .map(|gossip_host| {
             warn!("--gossip-host is deprecated. Use --bind-address or rely on automatic public IP discovery instead.");
             solana_net_utils::parse_host(gossip_host)
@@ -1108,7 +1096,7 @@ pub fn execute(
     })?;
 
     let public_tpu_addr = matches
-        .get_one::<String>("public_tpu_addr")
+        .value_of("public_tpu_addr")
         .map(|public_tpu_addr| {
             solana_net_utils::parse_host_port(public_tpu_addr)
                 .map_err(|err| format!("failed to parse --public-tpu-address: {err}"))
@@ -1116,7 +1104,7 @@ pub fn execute(
         .transpose()?;
 
     let public_tpu_forwards_addr = matches
-        .get_one::<String>("public_tpu_forwards_addr")
+        .value_of("public_tpu_forwards_addr")
         .map(|public_tpu_forwards_addr| {
             solana_net_utils::parse_host_port(public_tpu_forwards_addr)
                 .map_err(|err| format!("failed to parse --public-tpu-forwards-address: {err}"))
@@ -1125,7 +1113,7 @@ pub fn execute(
 
     let tpu_vortexor_receiver_address =
         matches
-            .get_one::<String>("tpu_vortexor_receiver_address")
+            .value_of("tpu_vortexor_receiver_address")
             .map(|tpu_vortexor_receiver_address| {
                 solana_net_utils::parse_host_port(tpu_vortexor_receiver_address).unwrap_or_else(
                     |err| {
@@ -1214,7 +1202,7 @@ pub fn execute(
     }
 
     solana_metrics::set_host_id(identity_keypair.pubkey().to_string());
-    solana_metrics::set_panic_hookSome(("validator", String::from(solana_version)));
+    solana_metrics::set_panic_hook("validator", Some(String::from(solana_version)));
     solana_entry::entry::init_poh();
     snapshot_utils::remove_tmp_snapshot_archives(&full_snapshot_archives_dir);
     snapshot_utils::remove_tmp_snapshot_archives(&incremental_snapshot_archives_dir);
@@ -1334,8 +1322,8 @@ pub fn execute(
 }
 
 // This function is duplicated in ledger-tool/src/main.rs...
-fn hardforks_of(matches: &ArgMatches, name: &str) -> Option<Vec<Slot>> {
-    if matches.get_flag(name) {
+fn hardforks_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Slot>> {
+    if matches.is_present(name) {
         Some(values_t_or_exit!(matches, name, Slot))
     } else {
         None
@@ -1344,11 +1332,11 @@ fn hardforks_of(matches: &ArgMatches, name: &str) -> Option<Vec<Slot>> {
 
 fn validators_set(
     identity_pubkey: &Pubkey,
-    matches: &ArgMatches,
+    matches: &ArgMatches<'_>,
     matches_name: &str,
     arg_name: &str,
 ) -> Result<Option<HashSet<Pubkey>>, String> {
-    if matches.get_flag(matches_name) {
+    if matches.is_present(matches_name) {
         let validators_set: HashSet<_> = values_t_or_exit!(matches, matches_name, Pubkey)
             .into_iter()
             .collect();
@@ -1389,7 +1377,7 @@ fn configure_banking_trace_dir_byte_limit(
     validator_config: &mut ValidatorConfig,
     matches: &ArgMatches,
 ) {
-    validator_config.banking_trace_dir_byte_limit = if matches.get_flag("disable_banking_trace") {
+    validator_config.banking_trace_dir_byte_limit = if matches.is_present("disable_banking_trace") {
         // disable with an explicit flag; This effectively becomes `opt-out` by resetting to
         // DISABLED_BAKING_TRACE_DIR, while allowing us to specify a default sensible limit in clap
         // configuration for cli help.
@@ -1403,9 +1391,9 @@ fn configure_banking_trace_dir_byte_limit(
 
 fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
     let account_indexes: HashSet<AccountIndex> = matches
-        .get_many::<String>("account_indexes")
+        .values_of("account_indexes")
         .unwrap_or_default()
-        .map(|value| match value.as_str() {
+        .map(|value| match value {
             "program-id" => AccountIndex::ProgramId,
             "spl-token-mint" => AccountIndex::SplTokenMint,
             "spl-token-owner" => AccountIndex::SplTokenOwner,

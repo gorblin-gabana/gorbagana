@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, App, AppSettings, Arg, ArgMatches, SubCommand},
+    clap::{value_t, Arg, ArgMatches, Command, ArgAction},
     std::path::Path,
 };
 
@@ -50,22 +50,22 @@ impl FromClapArgMatches for PluginReloadArgs {
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    let name_arg = Arg::with_name("name").required(true).takes_value(true);
-    let config_arg = Arg::with_name("config").required(true).takes_value(true);
+pub fn command() -> Command {
+    let name_arg = Arg::new("name").required(true).value_parser(clap::value_parser!(String));
+    let config_arg = Arg::new("config").required(true).value_parser(clap::value_parser!(String));
 
-    SubCommand::with_name(COMMAND)
+    Command::new(COMMAND)
         .about("Manage and view geyser plugins")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .setting(AppSettings::InferSubcommands)
-        .subcommand(SubCommand::with_name("list").about("List all current running geyser plugins"))
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(Command::new("list").about("List all current running geyser plugins"))
         .subcommand(
-            SubCommand::with_name("unload")
+            Command::new("unload")
                 .about("Unload a particular geyser plugin. You must specify the geyser plugin name")
                 .arg(&name_arg),
         )
         .subcommand(
-            SubCommand::with_name("reload")
+            Command::new("reload")
                 .about(
                     "Reload a particular geyser plugin. You must specify the geyser plugin name \
                      and the new config path",
@@ -74,7 +74,7 @@ pub fn command<'a>() -> App<'a, 'a> {
                 .arg(&config_arg),
         )
         .subcommand(
-            SubCommand::with_name("load")
+            Command::new("load")
                 .about(
                     "Load a new geyser plugin. You must specify the config path. Fails if \
                      overwriting (use reload)",
@@ -85,7 +85,7 @@ pub fn command<'a>() -> App<'a, 'a> {
 
 pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
     match matches.subcommand() {
-        ("list", _) => {
+        Some(Some(("list", _))) => {
             let admin_client = admin_rpc_service::connect(ledger_path);
             let plugins = admin_rpc_service::runtime()
                 .block_on(async move { admin_client.await?.list_plugins().await })?;
@@ -98,7 +98,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
                 println!("There are currently no plugins loaded");
             }
         }
-        ("unload", Some(subcommand_matches)) => {
+        Some(("unload", subcommand_matches)) => {
             let PluginUnloadArgs { name } =
                 PluginUnloadArgs::from_clap_arg_match(subcommand_matches)?;
 
@@ -107,7 +107,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
                 .block_on(async { admin_client.await?.unload_plugin(name.clone()).await })?;
             println!("Successfully unloaded plugin: {name}");
         }
-        ("load", Some(subcommand_matches)) => {
+        Some(("load", subcommand_matches)) => {
             let PluginLoadArgs { config } =
                 PluginLoadArgs::from_clap_arg_match(subcommand_matches)?;
 
@@ -116,7 +116,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
                 .block_on(async { admin_client.await?.load_plugin(config.clone()).await })?;
             println!("Successfully loaded plugin: {name}");
         }
-        ("reload", Some(subcommand_matches)) => {
+        Some(("reload", subcommand_matches)) => {
             let PluginReloadArgs { name, config } =
                 PluginReloadArgs::from_clap_arg_match(subcommand_matches)?;
 

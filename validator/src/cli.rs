@@ -1,6 +1,6 @@
 use {
     crate::commands,
-    clap::{crate_description, crate_name, App, AppSettings, Arg, ArgMatches, SubCommand},
+    clap::{crate_description, crate_name, Arg, ArgMatches, Command, ArgAction},
     log::warn,
     solana_accounts_db::{
         accounts_db::{
@@ -51,7 +51,7 @@ const MAX_SNAPSHOT_DOWNLOAD_ABORT: u32 = 5;
 // with less than 2 ticks per slot.
 const MINIMUM_TICKS_PER_SLOT: u64 = 2;
 
-pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
+pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> Command {
     let app = App::new(crate_name!())
         .about(crate_description!())
         .version(version)
@@ -65,10 +65,10 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
         .subcommand(commands::repair_shred_from_peer::command())
         .subcommand(commands::repair_whitelist::command())
         .subcommand(
-            SubCommand::with_name("init").about("Initialize the ledger directory then exit"),
+            Command::new("init").about("Initialize the ledger directory then exit"),
         )
         .subcommand(commands::monitor::command())
-        .subcommand(SubCommand::with_name("run").about("Run the validator"))
+        .subcommand(Command::new("run").about("Run the validator"))
         .subcommand(commands::plugin::command())
         .subcommand(commands::set_identity::command())
         .subcommand(commands::set_log_filter::command())
@@ -126,7 +126,7 @@ fn deprecated_arguments() -> Vec<DeprecatedArg> {
         (@into-option $v:expr) => { Some($v) };
     }
 
-    add_arg!(Arg::with_name("disable_accounts_disk_index")
+    add_arg!(Arg::new("disable_accounts_disk_index")
         .long("disable-accounts-disk-index")
         .help("Disable the disk-based accounts index if it is enabled by default."));
 
@@ -153,7 +153,7 @@ pub fn warn_for_deprecated_arguments(matches: &ArgMatches) {
         usage_warning,
     } in deprecated_arguments().into_iter()
     {
-        if matches.is_present(arg.b.name) {
+        if matches.get_flag(arg.b.name) {
             let mut msg = format!("--{} is deprecated", arg.b.name.replace('_', "-"));
             if let Some(replaced_by) = replaced_by {
                 msg.push_str(&format!(", please use --{replaced_by}"));
@@ -378,16 +378,16 @@ pub(crate) fn hash_validator(hash: String) -> Result<(), String> {
 }
 
 /// Test validator
-pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<'a, 'a> {
+pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Command {
     App::new("solana-test-validator")
         .about("Test Validator")
         .version(version)
         .arg({
-            let arg = Arg::with_name("config_file")
+            let arg = Arg::new("config_file")
                 .short("C")
                 .long("config")
                 .value_name("PATH")
-                .takes_value(true)
+                
                 .help("Configuration file to use");
             if let Some(ref config_file) = *solana_cli_config::CONFIG_FILE {
                 arg.default_value(config_file)
@@ -396,11 +396,11 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
             }
         })
         .arg(
-            Arg::with_name("json_rpc_url")
+            Arg::new("json_rpc_url")
                 .short("u")
                 .long("url")
                 .value_name("URL_OR_MONIKER")
-                .takes_value(true)
+                
                 .validator(is_url_or_moniker)
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
@@ -408,11 +408,11 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("mint_address")
+            Arg::new("mint_address")
                 .long("mint")
                 .value_name("PUBKEY")
                 .validator(is_pubkey)
-                .takes_value(true)
+                
                 .help(
                     "Address of the mint account that will receive tokens created at genesis. If \
                      the ledger already exists then this parameter is silently ignored \
@@ -420,71 +420,71 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("ledger_path")
+            Arg::new("ledger_path")
                 .short("l")
                 .long("ledger")
                 .value_name("DIR")
-                .takes_value(true)
+                
                 .required(true)
                 .default_value("test-ledger")
                 .help("Use DIR as ledger location"),
         )
         .arg(
-            Arg::with_name("reset")
+            Arg::new("reset")
                 .short("r")
                 .long("reset")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help(
                     "Reset the ledger to genesis if it exists. By default the validator will \
                      resume an existing ledger (if present)",
                 ),
         )
         .arg(
-            Arg::with_name("quiet")
+            Arg::new("quiet")
                 .short("q")
                 .long("quiet")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .conflicts_with("log")
                 .help("Quiet mode: suppress normal output"),
         )
         .arg(
-            Arg::with_name("log")
+            Arg::new("log")
                 .long("log")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .conflicts_with("quiet")
                 .help("Log mode: stream the validator log"),
         )
         .arg(
-            Arg::with_name("account_indexes")
+            Arg::new("account_indexes")
                 .long("account-index")
-                .takes_value(true)
-                .multiple(true)
+                
+                .action(ArgAction::Append)
                 .possible_values(&["program-id", "spl-token-owner", "spl-token-mint"])
                 .value_name("INDEX")
                 .help("Enable an accounts index, indexed by the selected account field"),
         )
         .arg(
-            Arg::with_name("faucet_port")
+            Arg::new("faucet_port")
                 .long("faucet-port")
                 .value_name("PORT")
-                .takes_value(true)
+                
                 .default_value(&default_args.faucet_port)
                 .validator(port_validator)
                 .help("Enable the faucet on this port"),
         )
         .arg(
-            Arg::with_name("rpc_port")
+            Arg::new("rpc_port")
                 .long("rpc-port")
                 .value_name("PORT")
-                .takes_value(true)
+                
                 .default_value(&default_args.rpc_port)
                 .validator(port_validator)
                 .help("Enable JSON RPC on this port, and the next port for the RPC websocket"),
         )
         .arg(
-            Arg::with_name("enable_rpc_bigtable_ledger_storage")
+            Arg::new("enable_rpc_bigtable_ledger_storage")
                 .long("enable-rpc-bigtable-ledger-storage")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .hidden(hidden_unless_forced())
                 .help(
                     "Fetch historical transaction info from a BigTable instance as a fallback to \
@@ -492,49 +492,49 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("enable_bigtable_ledger_upload")
+            Arg::new("enable_bigtable_ledger_upload")
                 .long("enable-bigtable-ledger-upload")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .hidden(hidden_unless_forced())
                 .help("Upload new confirmed blocks into a BigTable instance"),
         )
         .arg(
-            Arg::with_name("rpc_bigtable_instance")
+            Arg::new("rpc_bigtable_instance")
                 .long("rpc-bigtable-instance")
                 .value_name("INSTANCE_NAME")
-                .takes_value(true)
+                
                 .hidden(hidden_unless_forced())
                 .default_value("solana-ledger")
                 .help("Name of BigTable instance to target"),
         )
         .arg(
-            Arg::with_name("rpc_bigtable_app_profile_id")
+            Arg::new("rpc_bigtable_app_profile_id")
                 .long("rpc-bigtable-app-profile-id")
                 .value_name("APP_PROFILE_ID")
-                .takes_value(true)
+                
                 .hidden(hidden_unless_forced())
                 .default_value(solana_storage_bigtable::DEFAULT_APP_PROFILE_ID)
                 .help("Application profile id to use in Bigtable requests"),
         )
         .arg(
-            Arg::with_name("rpc_pubsub_enable_vote_subscription")
+            Arg::new("rpc_pubsub_enable_vote_subscription")
                 .long("rpc-pubsub-enable-vote-subscription")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Enable the unstable RPC PubSub `voteSubscribe` subscription"),
         )
         .arg(
-            Arg::with_name("rpc_pubsub_enable_block_subscription")
+            Arg::new("rpc_pubsub_enable_block_subscription")
                 .long("rpc-pubsub-enable-block-subscription")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Enable the unstable RPC PubSub `blockSubscribe` subscription"),
         )
         .arg(
-            Arg::with_name("bpf_program")
+            Arg::new("bpf_program")
                 .long("bpf-program")
                 .value_names(&["ADDRESS_OR_KEYPAIR", "SBF_PROGRAM.SO"])
-                .takes_value(true)
+                
                 .number_of_values(2)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help(
                     "Add a SBF program to the genesis configuration with upgrades disabled. If \
                      the ledger already exists then this parameter is silently ignored. The first \
@@ -542,12 +542,12 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("upgradeable_program")
+            Arg::new("upgradeable_program")
                 .long("upgradeable-program")
                 .value_names(&["ADDRESS_OR_KEYPAIR", "SBF_PROGRAM.SO", "UPGRADE_AUTHORITY"])
-                .takes_value(true)
+                
                 .number_of_values(3)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help(
                     "Add an upgradeable SBF program to the genesis configuration. If the ledger \
                      already exists then this parameter is silently ignored. First and third \
@@ -556,13 +556,13 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("account")
+            Arg::new("account")
                 .long("account")
                 .value_names(&["ADDRESS", "DUMP.JSON"])
-                .takes_value(true)
+                
                 .number_of_values(2)
                 .allow_hyphen_values(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help(
                     "Load an account from the provided JSON file (see `solana account --help` on \
                      how to dump an account to file). Files are searched for relatively to CWD \
@@ -572,7 +572,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("account_dir")
+            Arg::new("account_dir")
                 .long("account-dir")
                 .value_name("DIRECTORY")
                 .validator(|value| {
@@ -589,8 +589,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                             }
                         })
                 })
-                .takes_value(true)
-                .multiple(true)
+                
+                .action(ArgAction::Append)
                 .help(
                     "Load all the accounts from the JSON files found in the specified DIRECTORY \
                      (see also the `--account` flag). If the ledger already exists then this \
@@ -598,7 +598,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("ticks_per_slot")
+            Arg::new("ticks_per_slot")
                 .long("ticks-per-slot")
                 .value_name("TICKS")
                 .validator(|value| {
@@ -613,11 +613,11 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                             }
                         })
                 })
-                .takes_value(true)
+                
                 .help("The number of ticks in a slot"),
         )
         .arg(
-            Arg::with_name("slots_per_epoch")
+            Arg::new("slots_per_epoch")
                 .long("slots-per-epoch")
                 .value_name("SLOTS")
                 .validator(|value| {
@@ -632,14 +632,14 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                             }
                         })
                 })
-                .takes_value(true)
+                
                 .help(
                     "Override the number of slots in an epoch. If the ledger already exists then \
                      this parameter is silently ignored",
                 ),
         )
         .arg(
-            Arg::with_name("inflation_fixed")
+            Arg::new("inflation_fixed")
                 .long("inflation-fixed")
                 .value_name("RATE")
                 .validator(|value| {
@@ -651,7 +651,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
 			    Some(Ordering::Less) | None => Err(String::from("value must be >= 0")),
                         })
                 })
-                .takes_value(true)
+                
                 .allow_hyphen_values(true)
                 .help(
                     "Override default inflation with fixed rate. If the ledger already exists then \
@@ -659,46 +659,46 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("gossip_port")
+            Arg::new("gossip_port")
                 .long("gossip-port")
                 .value_name("PORT")
-                .takes_value(true)
+                
                 .help("Gossip port number for the validator"),
         )
         .arg(
-            Arg::with_name("gossip_host")
+            Arg::new("gossip_host")
                 .long("gossip-host")
                 .value_name("HOST")
-                .takes_value(true)
+                
                 .validator(solana_net_utils::is_host)
                 .hidden(hidden_unless_forced())
                 .help("DEPRECATED: Use --bind-address instead."),
         )
         .arg(
-            Arg::with_name("dynamic_port_range")
+            Arg::new("dynamic_port_range")
                 .long("dynamic-port-range")
                 .value_name("MIN_PORT-MAX_PORT")
-                .takes_value(true)
+                
                 .validator(port_range_validator)
                 .help("Range to use for dynamically assigned ports [default: 1024-65535]"),
         )
         .arg(
-            Arg::with_name("bind_address")
+            Arg::new("bind_address")
                 .long("bind-address")
                 .value_name("HOST")
-                .takes_value(true)
+                
                 .validator(solana_net_utils::is_host)
                 .default_value("127.0.0.1")
                 .help("IP address to bind the validator ports [default: 127.0.0.1]"),
         )
         .arg(
-            Arg::with_name("clone_account")
+            Arg::new("clone_account")
                 .long("clone")
                 .short("c")
                 .value_name("ADDRESS")
-                .takes_value(true)
+                
                 .validator(is_pubkey_or_keypair)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
                     "Copy an account from the cluster referenced by the --url argument the \
@@ -707,11 +707,11 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("deep_clone_address_lookup_table")
+            Arg::new("deep_clone_address_lookup_table")
                 .long("deep-clone-address-lookup-table")
-                .takes_value(true)
+                
                 .validator(is_pubkey_or_keypair)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
                     "Copy an address lookup table and all accounts it references from the cluster referenced by the --url \
@@ -720,12 +720,12 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("maybe_clone_account")
+            Arg::new("maybe_clone_account")
                 .long("maybe-clone")
                 .value_name("ADDRESS")
-                .takes_value(true)
+                
                 .validator(is_pubkey_or_keypair)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
                     "Copy an account from the cluster referenced by the --url argument, skipping \
@@ -734,12 +734,12 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("clone_upgradeable_program")
+            Arg::new("clone_upgradeable_program")
                 .long("clone-upgradeable-program")
                 .value_name("ADDRESS")
-                .takes_value(true)
+                
                 .validator(is_pubkey_or_keypair)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
                     "Copy an upgradeable program and its executable data from the cluster \
@@ -748,11 +748,11 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("warp_slot")
+            Arg::new("warp_slot")
                 .required(false)
                 .long("warp-slot")
                 .short("w")
-                .takes_value(true)
+                
                 .value_name("WARP_SLOT")
                 .validator(is_slot)
                 .min_values(0)
@@ -764,17 +764,17 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("limit_ledger_size")
+            Arg::new("limit_ledger_size")
                 .long("limit-ledger-size")
                 .value_name("SHRED_COUNT")
-                .takes_value(true)
+                
                 .default_value(default_args.limit_ledger_size.as_str())
                 .help("Keep this amount of shreds in root slots."),
         )
         .arg(
-            Arg::with_name("faucet_sol")
+            Arg::new("faucet_sol")
                 .long("faucet-sol")
-                .takes_value(true)
+                
                 .value_name("SOL")
                 .default_value(default_args.faucet_sol.as_str())
                 .help(
@@ -783,78 +783,78 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                 ),
         )
         .arg(
-            Arg::with_name("faucet_time_slice_secs")
+            Arg::new("faucet_time_slice_secs")
                 .long("faucet-time-slice-secs")
-                .takes_value(true)
+                
                 .value_name("SECS")
                 .default_value(default_args.faucet_time_slice_secs.as_str())
                 .help("Time slice (in secs) over which to limit faucet requests"),
         )
         .arg(
-            Arg::with_name("faucet_per_time_sol_cap")
+            Arg::new("faucet_per_time_sol_cap")
                 .long("faucet-per-time-sol-cap")
-                .takes_value(true)
+                
                 .value_name("SOL")
                 .min_values(0)
                 .max_values(1)
                 .help("Per-time slice limit for faucet requests, in SOL"),
         )
         .arg(
-            Arg::with_name("faucet_per_request_sol_cap")
+            Arg::new("faucet_per_request_sol_cap")
                 .long("faucet-per-request-sol-cap")
-                .takes_value(true)
+                
                 .value_name("SOL")
                 .min_values(0)
                 .max_values(1)
                 .help("Per-request limit for faucet requests, in SOL"),
         )
         .arg(
-            Arg::with_name("geyser_plugin_config")
+            Arg::new("geyser_plugin_config")
                 .long("geyser-plugin-config")
                 .alias("accountsdb-plugin-config")
                 .value_name("FILE")
-                .takes_value(true)
-                .multiple(true)
+                
+                .action(ArgAction::Append)
                 .help("Specify the configuration file for the Geyser plugin."),
         )
         .arg(
-            Arg::with_name("deactivate_feature")
+            Arg::new("deactivate_feature")
                 .long("deactivate-feature")
-                .takes_value(true)
+                
                 .value_name("FEATURE_PUBKEY")
                 .validator(is_pubkey)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help("deactivate this feature in genesis."),
         )
         .arg(
-            Arg::with_name("compute_unit_limit")
+            Arg::new("compute_unit_limit")
                 .long("compute-unit-limit")
                 .alias("max-compute-units")
                 .value_name("COMPUTE_UNITS")
                 .validator(is_parsable::<u64>)
-                .takes_value(true)
+                
                 .help("Override the runtime's compute unit limit per transaction"),
         )
         .arg(
-            Arg::with_name("log_messages_bytes_limit")
+            Arg::new("log_messages_bytes_limit")
                 .long("log-messages-bytes-limit")
                 .value_name("BYTES")
                 .validator(is_parsable::<usize>)
-                .takes_value(true)
+                
                 .help("Maximum number of bytes written to the program log before truncation"),
         )
         .arg(
-            Arg::with_name("transaction_account_lock_limit")
+            Arg::new("transaction_account_lock_limit")
                 .long("transaction-account-lock-limit")
                 .value_name("NUM_ACCOUNTS")
                 .validator(is_parsable::<u64>)
-                .takes_value(true)
+                
                 .help("Override the runtime's account lock limit per transaction"),
         )
         .arg(
-            Arg::with_name("clone_feature_set")
+            Arg::new("clone_feature_set")
                 .long("clone-feature-set")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .requires("json_rpc_url")
                 .help(
                     "Copy a feature set from the cluster referenced by the --url \

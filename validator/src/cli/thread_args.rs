@@ -83,9 +83,9 @@ pub fn thread_args<'a>(defaults: &DefaultThreadArgs) -> Vec<Arg<'_, 'a>> {
 }
 
 fn new_thread_arg<'a, T: ThreadArg>(default: &str) -> Arg<'_, 'a> {
-    Arg::with_name(T::NAME)
+    Arg::new(T::NAME)
         .long(T::LONG_NAME)
-        .takes_value(true)
+        
         .value_name("NUMBER")
         .default_value(default)
         .validator(|num| is_within_range(num, T::range()))

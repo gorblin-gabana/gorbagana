@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{App, Arg, ArgGroup, ArgMatches, SubCommand},
+    clap::{Arg, ArgGroup, ArgMatches, Command},
     std::{net::SocketAddr, path::Path},
 };
 
@@ -23,7 +23,7 @@ impl FromClapArgMatches for SetPublicAddressArgs {
             Option<SocketAddr>,
             Box<dyn std::error::Error>,
         > {
-            Ok(matches.value_of(arg_name).map(|host_port| {
+            Ok(matches.get_one::<String>(arg_name).map(|host_port| {
                 solana_net_utils::parse_host_port(host_port).map_err(|err| {
                     format!(
                         "failed to parse --{arg_long} address. It must be in the HOST:PORT format. {err}"
@@ -39,30 +39,28 @@ impl FromClapArgMatches for SetPublicAddressArgs {
     }
 }
 
-pub fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub fn command() -> Command {
+    Command::new(COMMAND)
         .about("Specify addresses to advertise in gossip")
         .arg(
-            Arg::with_name("tpu_addr")
+            Arg::new("tpu_addr")
                 .long("tpu")
                 .value_name("HOST:PORT")
-                .takes_value(true)
-                .validator(solana_net_utils::is_host_port)
+                .value_parser(clap::value_parser!(String))
                 .help("TPU address to advertise in gossip"),
         )
         .arg(
-            Arg::with_name("tpu_forwards_addr")
+            Arg::new("tpu_forwards_addr")
                 .long("tpu-forwards")
                 .value_name("HOST:PORT")
-                .takes_value(true)
-                .validator(solana_net_utils::is_host_port)
+                .value_parser(clap::value_parser!(String))
                 .help("TPU Forwards address to advertise in gossip"),
         )
         .group(
-            ArgGroup::with_name("set_public_address_details")
-                .args(&["tpu_addr", "tpu_forwards_addr"])
+            ArgGroup::new("set_public_address_details")
+                .args(["tpu_addr", "tpu_forwards_addr"])
                 .required(true)
-                .multiple(true),
+                .action(ArgAction::Append),
         )
         .after_help("Note: At least one arg must be used. Using multiple is ok")
 }

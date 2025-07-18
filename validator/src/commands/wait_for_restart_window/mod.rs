@@ -4,7 +4,7 @@ use {
         commands::{FromClapArgMatches, Result},
         new_spinner_progress_bar, println_name_value,
     },
-    clap::{value_t_or_exit, App, Arg, ArgMatches, SubCommand},
+    clap::{value_t_or_exit, Arg, ArgMatches, Command, ArgAction},
     console::style,
     solana_clap_utils::{
         input_parsers::pubkey_of,
@@ -42,20 +42,19 @@ impl FromClapArgMatches for WaitForRestartWindowArgs {
             min_idle_time: value_t_or_exit!(matches, "min_idle_time", usize),
             identity: pubkey_of(matches, "identity"),
             max_delinquent_stake: value_t_or_exit!(matches, "max_delinquent_stake", u8),
-            skip_new_snapshot_check: matches.is_present("skip_new_snapshot_check"),
-            skip_health_check: matches.is_present("skip_health_check"),
+            skip_new_snapshot_check: matches.get_flag("skip_new_snapshot_check"),
+            skip_health_check: matches.get_flag("skip_health_check"),
         })
     }
 }
 
-pub(crate) fn command<'a>() -> App<'a, 'a> {
-    SubCommand::with_name(COMMAND)
+pub(crate) fn command() -> Command {
+    Command::new(COMMAND)
         .about("Monitor the validator for a good time to restart")
         .arg(
-            Arg::with_name("min_idle_time")
+            Arg::new("min_idle_time")
                 .long("min-idle-time")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
+                .value_parser(clap::value_parser!(usize))
                 .value_name("MINUTES")
                 .default_value(DEFAULT_MIN_IDLE_TIME)
                 .help(
@@ -63,30 +62,30 @@ pub(crate) fn command<'a>() -> App<'a, 'a> {
                 ),
         )
         .arg(
-            Arg::with_name("identity")
+            Arg::new("identity")
                 .long("identity")
                 .value_name("ADDRESS")
-                .takes_value(true)
-                .validator(is_pubkey_or_keypair)
+                .value_parser(clap::value_parser!(String))
                 .help("Validator identity to monitor [default: your validator]"),
         )
         .arg(
-            Arg::with_name("max_delinquent_stake")
+            Arg::new("max_delinquent_stake")
                 .long("max-delinquent-stake")
-                .takes_value(true)
-                .validator(is_valid_percentage)
+                .value_parser(clap::value_parser!(u8))
                 .value_name("PERCENT")
                 .default_value(DEFAULT_MAX_DELINQUENT_STAKE)
                 .help("The maximum delinquent stake % permitted for a restart"),
         )
         .arg(
-            Arg::with_name("skip_new_snapshot_check")
+            Arg::new("skip_new_snapshot_check")
                 .long("skip-new-snapshot-check")
+                .action(ArgAction::SetTrue)
                 .help("Skip check for a new snapshot"),
         )
         .arg(
-            Arg::with_name("skip_health_check")
+            Arg::new("skip_health_check")
                 .long("skip-health-check")
+                .action(ArgAction::SetTrue)
                 .help("Skip health check"),
         )
         .after_help(
