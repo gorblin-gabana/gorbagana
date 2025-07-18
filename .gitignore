@@ -17,7 +17,6 @@ solana-client-master
 # log files
 *.log
 log-*.txt
-log-*/
 
 # intellij files
 .idea/
