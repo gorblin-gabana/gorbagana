@@ -1,7 +1,7 @@
 //! Arguments for controlling the number of threads allocated for various tasks
 
 use {
-    clap::{value_t_or_exit, Arg, ArgMatches},
+    clap::{Arg, ArgMatches},
     solana_accounts_db::{accounts_db, accounts_index},
     solana_clap_utils::{hidden_unless_forced, input_validators::is_within_range},
     solana_rayon_threadlimit::{get_max_thread_count, get_thread_count},
@@ -57,39 +57,39 @@ impl Default for DefaultThreadArgs {
     }
 }
 
-pub fn thread_args<'a>(defaults: &DefaultThreadArgs) -> Vec<Arg<'_, 'a>> {
+pub fn thread_args<'a>(defaults: &DefaultThreadArgs) -> Vec<Arg> {
     vec![
-        new_thread_arg::<AccountsDbCleanThreadsArg>(&defaults.accounts_db_clean_threads),
-        new_thread_arg::<AccountsDbForegroundThreadsArg>(&defaults.accounts_db_foreground_threads),
-        new_thread_arg::<AccountsDbHashThreadsArg>(&defaults.accounts_db_hash_threads),
-        new_thread_arg::<AccountsIndexFlushThreadsArg>(&defaults.accounts_index_flush_threads),
-        new_thread_arg::<IpEchoServerThreadsArg>(&defaults.ip_echo_server_threads),
-        new_thread_arg::<RayonGlobalThreadsArg>(&defaults.rayon_global_threads),
-        new_thread_arg::<ReplayForksThreadsArg>(&defaults.replay_forks_threads),
-        new_thread_arg::<ReplayTransactionsThreadsArg>(&defaults.replay_transactions_threads),
-        new_thread_arg::<RocksdbCompactionThreadsArg>(&defaults.rocksdb_compaction_threads),
-        new_thread_arg::<RocksdbFlushThreadsArg>(&defaults.rocksdb_flush_threads),
+        new_thread_arg::<AccountsDbCleanThreadsArg>(Box::leak(Box::new(defaults.accounts_db_clean_threads.clone()))),
+        new_thread_arg::<AccountsDbForegroundThreadsArg>(Box::leak(Box::new(defaults.accounts_db_foreground_threads.clone()))),
+        new_thread_arg::<AccountsDbHashThreadsArg>(Box::leak(Box::new(defaults.accounts_db_hash_threads.clone()))),
+        new_thread_arg::<AccountsIndexFlushThreadsArg>(Box::leak(Box::new(defaults.accounts_index_flush_threads.clone()))),
+        new_thread_arg::<IpEchoServerThreadsArg>(Box::leak(Box::new(defaults.ip_echo_server_threads.clone()))),
+        new_thread_arg::<RayonGlobalThreadsArg>(Box::leak(Box::new(defaults.rayon_global_threads.clone()))),
+        new_thread_arg::<ReplayForksThreadsArg>(Box::leak(Box::new(defaults.replay_forks_threads.clone()))),
+        new_thread_arg::<ReplayTransactionsThreadsArg>(Box::leak(Box::new(defaults.replay_transactions_threads.clone()))),
+        new_thread_arg::<RocksdbCompactionThreadsArg>(Box::leak(Box::new(defaults.rocksdb_compaction_threads.clone()))),
+        new_thread_arg::<RocksdbFlushThreadsArg>(Box::leak(Box::new(defaults.rocksdb_flush_threads.clone()))),
         new_thread_arg::<TpuTransactionForwardReceiveThreadArgs>(
-            &defaults.tpu_transaction_forward_receive_threads,
+            Box::leak(Box::new(defaults.tpu_transaction_forward_receive_threads.clone())),
         ),
-        new_thread_arg::<TpuTransactionReceiveThreads>(&defaults.tpu_transaction_receive_threads),
+        new_thread_arg::<TpuTransactionReceiveThreads>(Box::leak(Box::new(defaults.tpu_transaction_receive_threads.clone()))),
         new_thread_arg::<TpuVoteTransactionReceiveThreads>(
-            &defaults.tpu_vote_transaction_receive_threads,
+            Box::leak(Box::new(defaults.tpu_vote_transaction_receive_threads.clone())),
         ),
-        new_thread_arg::<TvuReceiveThreadsArg>(&defaults.tvu_receive_threads),
-        new_thread_arg::<TvuRetransmitThreadsArg>(&defaults.tvu_retransmit_threads),
-        new_thread_arg::<TvuShredSigverifyThreadsArg>(&defaults.tvu_sigverify_threads),
+        new_thread_arg::<TvuReceiveThreadsArg>(Box::leak(Box::new(defaults.tvu_receive_threads.clone()))),
+        new_thread_arg::<TvuRetransmitThreadsArg>(Box::leak(Box::new(defaults.tvu_retransmit_threads.clone()))),
+        new_thread_arg::<TvuShredSigverifyThreadsArg>(Box::leak(Box::new(defaults.tvu_sigverify_threads.clone()))),
     ]
 }
 
-fn new_thread_arg<'a, T: ThreadArg>(default: &str) -> Arg<'_, 'a> {
+fn new_thread_arg<'a, T: ThreadArg>(default: &'static str) -> Arg {
     Arg::new(T::NAME)
         .long(T::LONG_NAME)
         
         .value_name("NUMBER")
         .default_value(default)
-        .validator(|num| is_within_range(num, T::range()))
-        .hidden(hidden_unless_forced())
+        .value_parser(|num: &str| is_within_range(num.to_string(), T::range()))
+        .hide(hidden_unless_forced())
         .help(T::HELP)
 }
 
@@ -114,74 +114,134 @@ pub struct NumThreadConfig {
 
 pub fn parse_num_threads_args(matches: &ArgMatches) -> NumThreadConfig {
     NumThreadConfig {
-        accounts_db_clean_threads: value_t_or_exit!(
-            matches,
-            AccountsDbCleanThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        accounts_db_foreground_threads: value_t_or_exit!(
-            matches,
-            AccountsDbForegroundThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        accounts_db_hash_threads: value_t_or_exit!(
-            matches,
-            AccountsDbHashThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        accounts_index_flush_threads: value_t_or_exit!(
-            matches,
-            AccountsIndexFlushThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        ip_echo_server_threads: value_t_or_exit!(
-            matches,
-            IpEchoServerThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        rayon_global_threads: value_t_or_exit!(matches, RayonGlobalThreadsArg::NAME, NonZeroUsize),
-        replay_forks_threads: value_t_or_exit!(matches, ReplayForksThreadsArg::NAME, NonZeroUsize),
-        replay_transactions_threads: value_t_or_exit!(
-            matches,
-            ReplayTransactionsThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        rocksdb_compaction_threads: value_t_or_exit!(
-            matches,
-            RocksdbCompactionThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        rocksdb_flush_threads: value_t_or_exit!(
-            matches,
-            RocksdbFlushThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        tpu_transaction_forward_receive_threads: value_t_or_exit!(
-            matches,
-            TpuTransactionForwardReceiveThreadArgs::NAME,
-            NonZeroUsize
-        ),
-        tpu_transaction_receive_threads: value_t_or_exit!(
-            matches,
-            TpuTransactionReceiveThreads::NAME,
-            NonZeroUsize
-        ),
-        tpu_vote_transaction_receive_threads: value_t_or_exit!(
-            matches,
-            TpuVoteTransactionReceiveThreads::NAME,
-            NonZeroUsize
-        ),
-        tvu_receive_threads: value_t_or_exit!(matches, TvuReceiveThreadsArg::NAME, NonZeroUsize),
-        tvu_retransmit_threads: value_t_or_exit!(
-            matches,
-            TvuRetransmitThreadsArg::NAME,
-            NonZeroUsize
-        ),
-        tvu_sigverify_threads: value_t_or_exit!(
-            matches,
-            TvuShredSigverifyThreadsArg::NAME,
-            NonZeroUsize
-        ),
+        accounts_db_clean_threads: matches
+            .get_one::<String>(AccountsDbCleanThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", AccountsDbCleanThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        accounts_db_foreground_threads: matches
+            .get_one::<String>(AccountsDbForegroundThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", AccountsDbForegroundThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        accounts_db_hash_threads: matches
+            .get_one::<String>(AccountsDbHashThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", AccountsDbHashThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        accounts_index_flush_threads: matches
+            .get_one::<String>(AccountsIndexFlushThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", AccountsIndexFlushThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        ip_echo_server_threads: matches
+            .get_one::<String>(IpEchoServerThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", IpEchoServerThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        rayon_global_threads: matches
+            .get_one::<String>(RayonGlobalThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", RayonGlobalThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        replay_forks_threads: matches
+            .get_one::<String>(ReplayForksThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", ReplayForksThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        replay_transactions_threads: matches
+            .get_one::<String>(ReplayTransactionsThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", ReplayTransactionsThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        rocksdb_compaction_threads: matches
+            .get_one::<String>(RocksdbCompactionThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", RocksdbCompactionThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        rocksdb_flush_threads: matches
+            .get_one::<String>(RocksdbFlushThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", RocksdbFlushThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        tpu_transaction_forward_receive_threads: matches
+            .get_one::<String>(TpuTransactionForwardReceiveThreadArgs::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TpuTransactionForwardReceiveThreadArgs::NAME);
+                std::process::exit(1);
+            }),
+        tpu_transaction_receive_threads: matches
+            .get_one::<String>(TpuTransactionReceiveThreads::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TpuTransactionReceiveThreads::NAME);
+                std::process::exit(1);
+            }),
+        tpu_vote_transaction_receive_threads: matches
+            .get_one::<String>(TpuVoteTransactionReceiveThreads::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TpuVoteTransactionReceiveThreads::NAME);
+                std::process::exit(1);
+            }),
+        tvu_receive_threads: matches
+            .get_one::<String>(TvuReceiveThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TvuReceiveThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        tvu_retransmit_threads: matches
+            .get_one::<String>(TvuRetransmitThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TvuRetransmitThreadsArg::NAME);
+                std::process::exit(1);
+            }),
+        tvu_sigverify_threads: matches
+            .get_one::<String>(TvuShredSigverifyThreadsArg::NAME)
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(NonZeroUsize::new)
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", TvuShredSigverifyThreadsArg::NAME);
+                std::process::exit(1);
+            }),
     }
 }
 

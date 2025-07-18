@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, App, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command},
     solana_clap_utils::input_validators::{is_parsable, is_pubkey},
     solana_pubkey::Pubkey,
     std::path::Path,
@@ -21,9 +21,21 @@ pub struct RepairShredFromPeerArgs {
 impl FromClapArgMatches for RepairShredFromPeerArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(RepairShredFromPeerArgs {
-            pubkey: value_t!(matches, "pubkey", Pubkey).ok(),
-            slot: value_t!(matches, "slot", u64)?,
-            shred: value_t!(matches, "shred", u64)?,
+            pubkey: matches.get_one::<String>("pubkey").and_then(|s| s.parse().ok()),
+            slot: matches
+                .get_one::<String>("slot")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("slot is required");
+                    std::process::exit(1);
+                }),
+            shred: matches
+                .get_one::<String>("shred")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("shred is required");
+                    std::process::exit(1);
+                }),
         })
     }
 }
@@ -37,7 +49,7 @@ pub fn command<'a>() -> Command {
                 .value_name("PUBKEY")
                 .required(false)
                 
-                .validator(is_pubkey)
+                .value_parser(clap::value_parser!(String))
                 .help("Identity pubkey of the validator to repair from"),
         )
         .arg(
@@ -46,7 +58,7 @@ pub fn command<'a>() -> Command {
                 .value_name("SLOT")
                 .required(true)
                 
-                .validator(is_parsable::<u64>)
+                .value_parser(clap::value_parser!(String))
                 .help("Slot to repair"),
         )
         .arg(
@@ -55,7 +67,7 @@ pub fn command<'a>() -> Command {
                 .value_name("SHRED")
                 .required(true)
                 
-                .validator(is_parsable::<u64>)
+                .value_parser(clap::value_parser!(String))
                 .help("Shred to repair"),
         )
 }

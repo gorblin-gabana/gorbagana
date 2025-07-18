@@ -141,7 +141,8 @@ fn main() {
         solana_cli_config::Config::default()
     };
 
-    let cluster_rpc_client = value_t!(matches, "json_rpc_url", String)
+    let cluster_rpc_client = matches.get_one::<String>("json_rpc_url")
+        .map(|s| s.parse::<String>().unwrap())
         .map(normalize_to_url_if_moniker)
         .map(RpcClient::new);
 
@@ -153,13 +154,13 @@ fn main() {
                 .unwrap_or_else(|_| (Keypair::new().pubkey(), true))
         });
 
-    let rpc_port = value_t_or_exit!(matches, "rpc_port", u16);
+    let rpc_port = matches.get_one::<String>("rpc_port").unwrap_or_else(|| std::process::exit(1)).parse::<u16>().unwrap();
     let enable_vote_subscription = matches.get_flag("rpc_pubsub_enable_vote_subscription");
     let enable_block_subscription = matches.get_flag("rpc_pubsub_enable_block_subscription");
-    let faucet_port = value_t_or_exit!(matches, "faucet_port", u16);
-    let ticks_per_slot = value_t!(matches, "ticks_per_slot", u64).ok();
-    let slots_per_epoch = value_t!(matches, "slots_per_epoch", Slot).ok();
-    let inflation_fixed = value_t!(matches, "inflation_fixed", f64).ok();
+    let faucet_port = matches.get_one::<String>("faucet_port").unwrap_or_else(|| std::process::exit(1)).parse::<u16>().unwrap();
+    let ticks_per_slot = matches.get_one::<String>("ticks_per_slot").map(|s| s.parse::<u64>().unwrap());
+    let slots_per_epoch = matches.get_one::<String>("slots_per_epoch").map(|s| s.parse::<Slot>().unwrap());
+    let inflation_fixed = matches.get_one::<String>("inflation_fixed").map(|s| s.parse::<f64>().unwrap());
     let gossip_host = matches.get_one::<String>("gossip_host").map(|gossip_host| {
         warn!("--gossip-host is deprecated. Use --bind-address instead.");
         solana_net_utils::parse_host(gossip_host).unwrap_or_else(|err| {
@@ -167,7 +168,7 @@ fn main() {
             exit(1);
         })
     });
-    let gossip_port = value_t!(matches, "gossip_port", u16).ok();
+    let gossip_port = matches.get_one::<String>("gossip_port").map(|s| s.parse::<u16>().unwrap());
     let dynamic_port_range = matches.get_one::<String>("dynamic_port_range").map(|port_range| {
         solana_net_utils::parse_port_range(port_range).unwrap_or_else(|| {
             eprintln!("Failed to parse --dynamic-port-range");
@@ -192,7 +193,7 @@ fn main() {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     };
 
-    let compute_unit_limit = value_t!(matches, "compute_unit_limit", u64).ok();
+    let compute_unit_limit = matches.get_one::<String>("compute_unit_limit").map(|s| s.parse::<u64>().unwrap());
 
     let faucet_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), faucet_port);
 
@@ -350,12 +351,12 @@ fn main() {
         });
     let faucet_pubkey = faucet_keypair.pubkey();
 
-    let faucet_time_slice_secs = value_t_or_exit!(matches, "faucet_time_slice_secs", u64);
-    let faucet_per_time_cap = value_t!(matches, "faucet_per_time_sol_cap", f64)
-        .ok()
+    let faucet_time_slice_secs = matches.get_one::<String>("faucet_time_slice_secs").unwrap_or_else(|| std::process::exit(1)).parse::<u64>().unwrap();
+    let faucet_per_time_cap = matches.get_one::<String>("faucet_per_time_sol_cap")
+        .map(|s| s.parse::<f64>().unwrap())
         .map(sol_to_lamports);
-    let faucet_per_request_cap = value_t!(matches, "faucet_per_request_sol_cap", f64)
-        .ok()
+    let faucet_per_request_cap = matches.get_one::<String>("faucet_per_request_sol_cap")
+        .map(|s| s.parse::<f64>().unwrap())
         .map(sol_to_lamports);
 
     let (sender, receiver) = unbounded();
@@ -400,9 +401,9 @@ fn main() {
     let mut genesis = TestValidatorGenesis::default();
     genesis.max_ledger_shreds = value_of(&matches, "limit_ledger_size");
     genesis.max_genesis_archive_unpacked_size = Some(u64::MAX);
-    genesis.log_messages_bytes_limit = value_t!(matches, "log_messages_bytes_limit", usize).ok();
+    genesis.log_messages_bytes_limit = matches.get_one::<String>("log_messages_bytes_limit").map(|s| s.parse::<usize>().unwrap());
     genesis.transaction_account_lock_limit =
-        value_t!(matches, "transaction_account_lock_limit", usize).ok();
+        matches.get_one::<String>("transaction_account_lock_limit").map(|s| s.parse::<usize>().unwrap());
 
     let tower_storage = Arc::new(FileTowerStorage::new(ledger_path.clone()));
 
@@ -445,12 +446,8 @@ fn main() {
     {
         Some(RpcBigtableConfig {
             enable_bigtable_ledger_upload: matches.get_flag("enable_bigtable_ledger_upload"),
-            bigtable_instance_name: value_t_or_exit!(matches, "rpc_bigtable_instance", String),
-            bigtable_app_profile_id: value_t_or_exit!(
-                matches,
-                "rpc_bigtable_app_profile_id",
-                String
-            ),
+            bigtable_instance_name: matches.get_one::<String>("rpc_bigtable_instance").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
+            bigtable_app_profile_id: matches.get_one::<String>("rpc_bigtable_app_profile_id").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
             timeout: None,
             ..RpcBigtableConfig::default()
         })

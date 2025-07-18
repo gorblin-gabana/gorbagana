@@ -6,7 +6,7 @@ use {
         commands::{run::args::RunArgs, FromClapArgMatches},
         ledger_lockfile, lock_ledger,
     },
-    clap::{crate_name, value_t, value_t_or_exit, values_t, values_t_or_exit, ArgMatches},
+    clap::{crate_name, ArgMatches, error::ErrorKind},
     crossbeam_channel::unbounded,
     log::*,
     rand::{seq::SliceRandom, thread_rng},
@@ -70,6 +70,7 @@ use {
     },
     solana_tpu_client::tpu_client::DEFAULT_TPU_ENABLE_UDP,
     solana_turbine::xdp::{set_cpu_affinity, XdpConfig},
+    solana_clap_utils::input_parsers::{keypairs_of, values_of, parse_cpu_ranges},
     std::{
         collections::HashSet,
         fs::{self, File},
@@ -142,12 +143,25 @@ pub fn execute(
 
     solana_core::validator::report_target_features();
 
-    let authorized_voter_keypairs = keypairs_of(matches, "authorized_voter_keypairs")
-        .map(|keypairs| keypairs.into_iter().map(Arc::new).collect())
+    let authorized_voter_keypairs = matches
+        .get_many::<String>("authorized_voter_keypairs")
+        .map(|values| {
+            values
+                .filter_map(|value| {
+                    if value == "ASK" {
+                        // Handle ASK keyword if needed
+                        None
+                    } else {
+                        solana_keypair::read_keypair_file(value).ok()
+                    }
+                })
+                .collect()
+        })
+        .map(|keypairs: Vec<Keypair>| keypairs.into_iter().map(Arc::new).collect())
         .unwrap_or_else(|| {
             // TODO: Replace with proper keypair parsing when clap-utils is updated
             let identity_path = matches.get_one::<String>("identity").expect("identity");
-            let keypair = solana_sdk::signer::keypair::read_keypair_file(identity_path)
+            let keypair = solana_keypair::read_keypair_file(identity_path)
                 .expect("Failed to read identity keypair");
             vec![Arc::new(keypair)]
         });
@@ -155,13 +169,13 @@ pub fn execute(
 
     let staked_nodes_overrides_path = matches
         .get_one::<String>("staked_nodes_overrides")
-        .map(str::to_string);
+        .map(|s| s.clone());
     let staked_nodes_overrides = Arc::new(RwLock::new(
         match &staked_nodes_overrides_path {
             None => StakedNodesOverrides::default(),
             Some(p) => load_staked_nodes_overrides(p).unwrap_or_else(|err| {
                 error!("Failed to load stake-nodes-overrides from {}: {}", p, err);
-                clap::Error::new(clap::ErrorKind::InvalidValue)
+                clap::Error::new(ErrorKind::InvalidValue)
                 .exit()
             }),
         }
@@ -172,7 +186,9 @@ pub fn execute(
 
     let private_rpc = matches.get_flag("private_rpc");
     let do_port_check = !matches.get_flag("no_port_check");
-    let tpu_coalesce = value_t!(matches, "tpu_coalesce_ms", u64)
+    let tpu_coalesce = matches
+        .get_one::<String>("tpu_coalesce_ms")
+        .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis)
         .unwrap_or(DEFAULT_TPU_COALESCE);
 
@@ -190,7 +206,13 @@ pub fn execute(
 
     let max_ledger_shreds = if matches.get_flag("limit_ledger_size") {
         let limit_ledger_size = match matches.get_one::<String>("limit_ledger_size") {
-            Some(_) => value_t_or_exit!(matches, "limit_ledger_size", u64),
+            Some(_) => matches
+                .get_one::<String>("limit_ledger_size")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("limit_ledger_size is required");
+                    std::process::exit(1);
+                }),
             None => DEFAULT_MAX_LEDGER_SHREDS,
         };
         if limit_ledger_size < DEFAULT_MIN_MAX_LEDGER_SHREDS {
@@ -215,11 +237,13 @@ pub fn execute(
                 _ => panic!("Unsupported ledger_compression: {ledger_compression_string}"),
             },
         },
-        rocks_perf_sample_interval: value_t_or_exit!(
-            matches,
-            "rocksdb_perf_sample_interval",
-            usize
-        ),
+        rocks_perf_sample_interval: matches
+            .get_one::<String>("rocksdb_perf_sample_interval")
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or_else(|| {
+                eprintln!("rocksdb_perf_sample_interval is required");
+                std::process::exit(1);
+            }),
     };
 
     let blockstore_options = BlockstoreOptions {
@@ -248,8 +272,10 @@ pub fn execute(
 
     let debug_keys: Option<Arc<HashSet<_>>> = if matches.get_flag("debug_key") {
         Some(Arc::new(
-            values_t_or_exit!(matches, "debug_key", Pubkey)
-                .into_iter()
+            matches
+                .get_many::<String>("debug_key")
+                .expect("debug_key should be present when flag is set")
+                .map(|s| Pubkey::from_str(s).expect("invalid pubkey"))
                 .collect(),
         ))
     } else {
@@ -294,18 +320,35 @@ pub fn execute(
         bind_addresses.primary()
     };
 
-    let contact_debug_interval = value_t_or_exit!(matches, "contact_debug_interval", u64);
+    let contact_debug_interval = matches
+        .get_one::<String>("contact_debug_interval")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("contact_debug_interval is required");
+            std::process::exit(1);
+        });
 
     let account_indexes = process_account_indexes(matches);
 
     let restricted_repair_only_mode = matches.get_flag("restricted_repair_only_mode");
-    let accounts_shrink_optimize_total_space =
-        value_t_or_exit!(matches, "accounts_shrink_optimize_total_space", bool);
+    let accounts_shrink_optimize_total_space = matches
+        .get_one::<String>("accounts_shrink_optimize_total_space")
+        .and_then(|s| s.parse::<bool>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("accounts_shrink_optimize_total_space is required");
+            std::process::exit(1);
+        });
     let tpu_use_quic = !matches.get_flag("tpu_disable_quic");
     if !tpu_use_quic {
         warn!("TPU QUIC was disabled via --tpu_disable_quic, this will prevent validator from receiving transactions!");
     }
-    let vote_use_quic = value_t_or_exit!(matches, "vote_use_quic", bool);
+    let vote_use_quic = matches
+        .get_one::<String>("vote_use_quic")
+        .and_then(|s| s.parse::<bool>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("vote_use_quic is required");
+            std::process::exit(1);
+        });
 
     let tpu_enable_udp = if matches.get_flag("tpu_enable_udp") {
         warn!("Submission of TPU transactions via UDP is deprecated.");
@@ -314,9 +357,21 @@ pub fn execute(
         DEFAULT_TPU_ENABLE_UDP
     };
 
-    let tpu_connection_pool_size = value_t_or_exit!(matches, "tpu_connection_pool_size", usize);
+    let tpu_connection_pool_size = matches
+        .get_one::<String>("tpu_connection_pool_size")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_connection_pool_size is required");
+            std::process::exit(1);
+        });
 
-    let shrink_ratio = value_t_or_exit!(matches, "accounts_shrink_ratio", f64);
+    let shrink_ratio = matches
+        .get_one::<String>("accounts_shrink_ratio")
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("accounts_shrink_ratio is required");
+            std::process::exit(1);
+        });
     if !(0.0..=1.0).contains(&shrink_ratio) {
         Err(format!(
             "the specified account-shrink-ratio is invalid, it must be between 0. and 1.0 \
@@ -339,12 +394,14 @@ pub fn execute(
     // abort if it fails to obtain a shred-version, so that nodes always join
     // gossip with a valid shred-version. The code to adopt entrypoint shred
     // version can then be deleted from gossip and get_rpc_node above.
-    let expected_shred_version = value_t!(matches, "expected_shred_version", u16)
-        .ok()
+    let expected_shred_version = matches
+        .get_one::<String>("expected_shred_version")
+        .and_then(|s| s.parse::<u16>().ok())
         .or_else(|| get_cluster_shred_version(&entrypoint_addrs, bind_addresses.primary()));
 
-    let tower_path = value_t!(matches, "tower", PathBuf)
-        .ok()
+    let tower_path = matches
+        .get_one::<String>("tower")
+        .map(|s| PathBuf::from(s))
         .unwrap_or_else(|| ledger_path.clone());
     let tower_storage: Arc<dyn tower_storage::TowerStorage> =
         Arc::new(tower_storage::FileTowerStorage::new(tower_path));
@@ -353,8 +410,10 @@ pub fn execute(
         num_flush_threads: Some(accounts_index_flush_threads),
         ..AccountsIndexConfig::default()
     };
-    if let Ok(bins) = value_t!(matches, "accounts_index_bins", usize) {
-        accounts_index_config.bins = Some(bins);
+    if let Some(bins_str) = matches.get_one::<String>("accounts_index_bins") {
+        if let Ok(bins) = bins_str.parse::<usize>() {
+            accounts_index_config.bins = Some(bins);
+        }
     }
 
     accounts_index_config.index_limit_mb = if matches.get_flag("disable_accounts_disk_index") {
@@ -365,10 +424,10 @@ pub fn execute(
 
     {
         let mut accounts_index_paths: Vec<PathBuf> = if matches.get_flag("accounts_index_path") {
-            values_t_or_exit!(matches, "accounts_index_path", String)
-                .into_iter()
-                .map(PathBuf::from)
-                .collect()
+            matches
+                .get_many::<String>("accounts_index_path")
+                .map(|values| values.map(|s| PathBuf::from(s)).collect())
+                .unwrap_or_default()
         } else {
             vec![]
         };
@@ -380,14 +439,15 @@ pub fn execute(
 
     const MB: usize = 1_024 * 1_024;
     accounts_index_config.scan_results_limit_bytes =
-        value_t!(matches, "accounts_index_scan_results_limit_mb", usize)
-            .ok()
+        matches
+            .get_one::<String>("accounts_index_scan_results_limit_mb")
+            .and_then(|s| s.parse::<usize>().ok())
             .map(|mb| mb * MB);
 
     let account_shrink_paths: Option<Vec<PathBuf>> =
-        values_t!(matches, "account_shrink_path", String)
-            .map(|shrink_paths| shrink_paths.into_iter().map(PathBuf::from).collect())
-            .ok();
+        matches
+            .get_many::<String>("account_shrink_path")
+            .map(|values| values.map(|s| PathBuf::from(s)).collect::<Vec<_>>());
     let account_shrink_paths = account_shrink_paths
         .as_ref()
         .map(|paths| {
@@ -404,8 +464,14 @@ pub fn execute(
         .transpose()?
         .unzip();
 
-    let read_cache_limit_bytes = values_of::<usize>(matches, "accounts_db_read_cache_limit_mb")
-        .map(|limits| {
+    let read_cache_limit_bytes = matches
+        .get_many::<String>("accounts_db_read_cache_limit_mb")
+        .map(|values| {
+            values
+                .map(|s| s.parse::<usize>().expect("invalid usize"))
+                .collect()
+        })
+        .map(|limits: Vec<usize>| {
             match limits.len() {
                 // we were given explicit low and high watermark values, so use them
                 2 => (limits[0] * MB, limits[1] * MB),
@@ -452,23 +518,22 @@ pub fn execute(
         shrink_paths: account_shrink_run_paths,
         shrink_ratio,
         read_cache_limit_bytes,
-        write_cache_limit_bytes: value_t!(matches, "accounts_db_cache_limit_mb", u64)
-            .ok()
+        write_cache_limit_bytes: matches
+            .get_one::<String>("accounts_db_cache_limit_mb")
+            .and_then(|s| s.parse::<u64>().ok())
             .map(|mb| mb * MB as u64),
-        ancient_append_vec_offset: value_t!(matches, "accounts_db_ancient_append_vecs", i64).ok(),
-        ancient_storage_ideal_size: value_t!(
-            matches,
-            "accounts_db_ancient_storage_ideal_size",
-            u64
-        )
-        .ok(),
-        max_ancient_storages: value_t!(matches, "accounts_db_max_ancient_storages", usize).ok(),
-        hash_calculation_pubkey_bins: value_t!(
-            matches,
-            "accounts_db_hash_calculation_pubkey_bins",
-            usize
-        )
-        .ok(),
+        ancient_append_vec_offset: matches
+            .get_one::<String>("accounts_db_ancient_append_vecs")
+            .and_then(|s| s.parse::<i64>().ok()),
+        ancient_storage_ideal_size: matches
+            .get_one::<String>("accounts_db_ancient_storage_ideal_size")
+            .and_then(|s| s.parse::<u64>().ok()),
+        max_ancient_storages: matches
+            .get_one::<String>("accounts_db_max_ancient_storages")
+            .and_then(|s| s.parse::<usize>().ok()),
+        hash_calculation_pubkey_bins: matches
+            .get_one::<String>("accounts_db_hash_calculation_pubkey_bins")
+            .and_then(|s| s.parse::<usize>().ok()),
         exhaustively_verify_refcounts: matches.get_flag("accounts_db_verify_refcounts"),
         storage_access,
         scan_filter_for_shrinking,
@@ -484,10 +549,10 @@ pub fn execute(
 
     let on_start_geyser_plugin_config_files = if matches.get_flag("geyser_plugin_config") {
         Some(
-            values_t_or_exit!(matches, "geyser_plugin_config", String)
-                .into_iter()
-                .map(PathBuf::from)
-                .collect(),
+            matches
+                .get_many::<String>("geyser_plugin_config")
+                .map(|values| values.map(|s| PathBuf::from(s)).collect())
+                .unwrap_or_default(),
         )
     } else {
         None
@@ -500,25 +565,57 @@ pub fn execute(
     {
         Some(RpcBigtableConfig {
             enable_bigtable_ledger_upload: matches.get_flag("enable_bigtable_ledger_upload"),
-            bigtable_instance_name: value_t_or_exit!(matches, "rpc_bigtable_instance_name", String),
-            bigtable_app_profile_id: value_t_or_exit!(
-                matches,
-                "rpc_bigtable_app_profile_id",
-                String
-            ),
-            timeout: value_t!(matches, "rpc_bigtable_timeout", u64)
-                .ok()
+            bigtable_instance_name: matches
+                .get_one::<String>("rpc_bigtable_instance_name")
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_bigtable_instance_name is required");
+                    std::process::exit(1);
+                }),
+            bigtable_app_profile_id: matches
+                .get_one::<String>("rpc_bigtable_app_profile_id")
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_bigtable_app_profile_id is required");
+                    std::process::exit(1);
+                }),
+            timeout: matches
+                .get_one::<String>("rpc_bigtable_timeout")
+                .and_then(|s| s.parse::<u64>().ok())
                 .map(Duration::from_secs),
-            max_message_size: value_t_or_exit!(matches, "rpc_bigtable_max_message_size", usize),
+            max_message_size: matches
+                .get_one::<String>("rpc_bigtable_max_message_size")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_bigtable_max_message_size is required");
+                    std::process::exit(1);
+                }),
         })
     } else {
         None
     };
 
-    let rpc_send_retry_rate_ms = value_t_or_exit!(matches, "rpc_send_transaction_retry_ms", u64);
-    let rpc_send_batch_size = value_t_or_exit!(matches, "rpc_send_transaction_batch_size", usize);
-    let rpc_send_batch_send_rate_ms =
-        value_t_or_exit!(matches, "rpc_send_transaction_batch_ms", u64);
+    let rpc_send_retry_rate_ms = matches
+        .get_one::<String>("rpc_send_transaction_retry_ms")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("rpc_send_transaction_retry_ms is required");
+            std::process::exit(1);
+        });
+    let rpc_send_batch_size = matches
+        .get_one::<String>("rpc_send_transaction_batch_size")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("rpc_send_transaction_batch_size is required");
+            std::process::exit(1);
+        });
+    let rpc_send_batch_send_rate_ms = matches
+        .get_one::<String>("rpc_send_transaction_batch_ms")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("rpc_send_transaction_batch_ms is required");
+            std::process::exit(1);
+        });
 
     if rpc_send_batch_send_rate_ms > rpc_send_retry_rate_ms {
         Err(format!(
@@ -554,7 +651,13 @@ pub fn execute(
             // rpc-sts is configured to send only to specific tpu peers. disable leader forwards
             0
         } else {
-            value_t_or_exit!(matches, "rpc_send_transaction_leader_forward_count", u64)
+            matches
+                .get_one::<String>("rpc_send_transaction_leader_forward_count")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_send_transaction_leader_forward_count is required");
+                    std::process::exit(1);
+                })
         };
 
     let full_api = matches.get_flag("full_rpc_api");
@@ -572,7 +675,9 @@ pub fn execute(
     let mut validator_config = ValidatorConfig {
         require_tower: matches.get_flag("require_tower"),
         tower_storage,
-        halt_at_slot: value_t!(matches, "dev_halt_at_slot", Slot).ok(),
+        halt_at_slot: matches
+            .get_one::<String>("dev_halt_at_slot")
+            .and_then(|s| s.parse::<Slot>().ok()),
         expected_genesis_hash: matches
             .get_one::<String>("expected_genesis_hash")
             .map(|s| Hash::from_str(s).unwrap()),
@@ -590,32 +695,59 @@ pub fn execute(
                 solana_net_utils::parse_host_port(address).expect("failed to parse faucet address")
             }),
             full_api,
-            max_multiple_accounts: Some(value_t_or_exit!(
-                matches,
-                "rpc_max_multiple_accounts",
-                usize
-            )),
-            health_check_slot_distance: value_t_or_exit!(
-                matches,
-                "health_check_slot_distance",
-                u64
-            ),
+            max_multiple_accounts: Some(matches
+                .get_one::<String>("rpc_max_multiple_accounts")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_max_multiple_accounts is required");
+                    std::process::exit(1);
+                })),
+            health_check_slot_distance: matches
+                .get_one::<String>("health_check_slot_distance")
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("health_check_slot_distance is required");
+                    std::process::exit(1);
+                }),
             disable_health_check: false,
-            rpc_threads: value_t_or_exit!(matches, "rpc_threads", usize),
-            rpc_blocking_threads: value_t_or_exit!(matches, "rpc_blocking_threads", usize),
-            rpc_niceness_adj: value_t_or_exit!(matches, "rpc_niceness_adj", i8),
+            rpc_threads: matches
+                .get_one::<String>("rpc_threads")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_threads is required");
+                    std::process::exit(1);
+                }),
+            rpc_blocking_threads: matches
+                .get_one::<String>("rpc_blocking_threads")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_blocking_threads is required");
+                    std::process::exit(1);
+                }),
+            rpc_niceness_adj: matches
+                .get_one::<String>("rpc_niceness_adj")
+                .and_then(|s| s.parse::<i8>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_niceness_adj is required");
+                    std::process::exit(1);
+                }),
             account_indexes: account_indexes.clone(),
             rpc_scan_and_fix_roots: matches.get_flag("rpc_scan_and_fix_roots"),
-            max_request_body_size: Some(value_t_or_exit!(
-                matches,
-                "rpc_max_request_body_size",
-                usize
-            )),
+            max_request_body_size: Some(matches
+                .get_one::<String>("rpc_max_request_body_size")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_max_request_body_size is required");
+                    std::process::exit(1);
+                })),
             skip_preflight_health_check: matches.get_flag("skip_preflight_health_check"),
         },
         on_start_geyser_plugin_config_files,
         geyser_plugin_always_enabled: matches.get_flag("geyser_plugin_always_enabled"),
-        rpc_addrs: value_t!(matches, "rpc_port", u16).ok().map(|rpc_port| {
+        rpc_addrs: matches
+            .get_one::<String>("rpc_port")
+            .and_then(|s| s.parse::<u16>().ok())
+            .map(|rpc_port| {
             (
                 SocketAddr::new(rpc_bind_address, rpc_port),
                 SocketAddr::new(rpc_bind_address, rpc_port + 1),
@@ -627,28 +759,43 @@ pub fn execute(
         pubsub_config: PubSubConfig {
             enable_block_subscription: matches.get_flag("rpc_pubsub_enable_block_subscription"),
             enable_vote_subscription: matches.get_flag("rpc_pubsub_enable_vote_subscription"),
-            max_active_subscriptions: value_t_or_exit!(
-                matches,
-                "rpc_pubsub_max_active_subscriptions",
-                usize
-            ),
-            queue_capacity_items: value_t_or_exit!(
-                matches,
-                "rpc_pubsub_queue_capacity_items",
-                usize
-            ),
-            queue_capacity_bytes: value_t_or_exit!(
-                matches,
-                "rpc_pubsub_queue_capacity_bytes",
-                usize
-            ),
-            worker_threads: value_t_or_exit!(matches, "rpc_pubsub_worker_threads", usize),
-            notification_threads: value_t!(matches, "rpc_pubsub_notification_threads", usize)
-                .ok()
+            max_active_subscriptions: matches
+                .get_one::<String>("rpc_pubsub_max_active_subscriptions")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_pubsub_max_active_subscriptions is required");
+                    std::process::exit(1);
+                }),
+            queue_capacity_items: matches
+                .get_one::<String>("rpc_pubsub_queue_capacity_items")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_pubsub_queue_capacity_items is required");
+                    std::process::exit(1);
+                }),
+            queue_capacity_bytes: matches
+                .get_one::<String>("rpc_pubsub_queue_capacity_bytes")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_pubsub_queue_capacity_bytes is required");
+                    std::process::exit(1);
+                }),
+            worker_threads: matches
+                .get_one::<String>("rpc_pubsub_worker_threads")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_pubsub_worker_threads is required");
+                    std::process::exit(1);
+                }),
+            notification_threads: matches
+                .get_one::<String>("rpc_pubsub_notification_threads")
+                .and_then(|s| s.parse::<usize>().ok())
                 .and_then(NonZeroUsize::new),
         },
         voting_disabled: matches.get_flag("no_voting") || restricted_repair_only_mode,
-        wait_for_supermajority: value_t!(matches, "wait_for_supermajority", Slot).ok(),
+        wait_for_supermajority: matches
+            .get_one::<String>("wait_for_supermajority")
+            .and_then(|s| s.parse::<Slot>().ok()),
         known_validators: run_args.known_validators,
         repair_validators,
         repair_whitelist,
@@ -661,24 +808,25 @@ pub fn execute(
         send_transaction_service_config: send_transaction_service::Config {
             retry_rate_ms: rpc_send_retry_rate_ms,
             leader_forward_count,
-            default_max_retries: value_t!(
-                matches,
-                "rpc_send_transaction_default_max_retries",
-                usize
-            )
-            .ok(),
-            service_max_retries: value_t_or_exit!(
-                matches,
-                "rpc_send_transaction_service_max_retries",
-                usize
-            ),
+            default_max_retries: matches
+                .get_one::<String>("rpc_send_transaction_default_max_retries")
+                .and_then(|s| s.parse::<usize>().ok()),
+            service_max_retries: matches
+                .get_one::<String>("rpc_send_transaction_service_max_retries")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_send_transaction_service_max_retries is required");
+                    std::process::exit(1);
+                }),
             batch_send_rate_ms: rpc_send_batch_send_rate_ms,
             batch_size: rpc_send_batch_size,
-            retry_pool_max_size: value_t_or_exit!(
-                matches,
-                "rpc_send_transaction_retry_pool_max_size",
-                usize
-            ),
+            retry_pool_max_size: matches
+                .get_one::<String>("rpc_send_transaction_retry_pool_max_size")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("rpc_send_transaction_retry_pool_max_size is required");
+                    std::process::exit(1);
+                }),
             tpu_peers: rpc_send_transaction_tpu_peers,
         },
         no_poh_speed_test: matches.get_flag("no_poh_speed_test"),
@@ -707,11 +855,13 @@ pub fn execute(
             ..RuntimeConfig::default()
         },
         staked_nodes_overrides: staked_nodes_overrides.clone(),
-        use_snapshot_archives_at_startup: value_t_or_exit!(
-            matches,
-            use_snapshot_archives_at_startup::cli::NAME,
-            UseSnapshotArchivesAtStartup
-        ),
+        use_snapshot_archives_at_startup: matches
+            .get_one::<String>(use_snapshot_archives_at_startup::cli::NAME)
+            .and_then(|s| UseSnapshotArchivesAtStartup::from_str(s).ok())
+            .unwrap_or_else(|| {
+                eprintln!("{} is required", use_snapshot_archives_at_startup::cli::NAME);
+                std::process::exit(1);
+            }),
         ip_echo_server_threads,
         rayon_global_threads,
         replay_forks_threads,
@@ -719,8 +869,12 @@ pub fn execute(
         tvu_shred_sigverify_threads: tvu_sigverify_threads,
         delay_leader_block_for_pending_fork: matches
             .get_flag("delay_leader_block_for_pending_fork"),
-        wen_restart_proto_path: value_t!(matches, "wen_restart", PathBuf).ok(),
-        wen_restart_coordinator: value_t!(matches, "wen_restart_coordinator", Pubkey).ok(),
+        wen_restart_proto_path: matches
+            .get_one::<String>("wen_restart")
+            .map(|s| PathBuf::from(s)),
+        wen_restart_coordinator: matches
+            .get_one::<String>("wen_restart_coordinator")
+            .and_then(|s| s.parse::<Pubkey>().ok()),
         retransmit_xdp,
         use_tpu_client_next: !matches.get_flag("use_connection_cache"),
         ..ValidatorConfig::default()
@@ -760,11 +914,9 @@ pub fn execute(
             .expect("invalid dynamic_port_range");
 
     let account_paths: Vec<PathBuf> =
-        if let Ok(account_paths) = values_t!(matches, "account_paths", String) {
+        if let Some(account_paths) = matches.get_many::<String>("account_paths") {
             account_paths
-                .join(",")
-                .split(',')
-                .map(PathBuf::from)
+                .map(|s| PathBuf::from(s))
                 .collect()
         } else {
             vec![ledger_path.join("accounts")]
@@ -790,20 +942,50 @@ pub fn execute(
             account_snapshot_paths
         };
 
-    let maximum_local_snapshot_age = value_t_or_exit!(matches, "maximum_local_snapshot_age", u64);
-    let maximum_full_snapshot_archives_to_retain =
-        value_t_or_exit!(matches, "maximum_full_snapshots_to_retain", NonZeroUsize);
-    let maximum_incremental_snapshot_archives_to_retain = value_t_or_exit!(
-        matches,
-        "maximum_incremental_snapshots_to_retain",
-        NonZeroUsize
-    );
-    let snapshot_packager_niceness_adj =
-        value_t_or_exit!(matches, "snapshot_packager_niceness_adj", i8);
-    let minimal_snapshot_download_speed =
-        value_t_or_exit!(matches, "minimal_snapshot_download_speed", f32);
-    let maximum_snapshot_download_abort =
-        value_t_or_exit!(matches, "maximum_snapshot_download_abort", u64);
+    let maximum_local_snapshot_age = matches
+        .get_one::<String>("maximum_local_snapshot_age")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("maximum_local_snapshot_age is required");
+            std::process::exit(1);
+        });
+    let maximum_full_snapshot_archives_to_retain = matches
+        .get_one::<String>("maximum_full_snapshots_to_retain")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(NonZeroUsize::new)
+        .unwrap_or_else(|| {
+            eprintln!("maximum_full_snapshots_to_retain is required");
+            std::process::exit(1);
+        });
+    let maximum_incremental_snapshot_archives_to_retain = matches
+        .get_one::<String>("maximum_incremental_snapshots_to_retain")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(NonZeroUsize::new)
+        .unwrap_or_else(|| {
+            eprintln!("maximum_incremental_snapshots_to_retain is required");
+            std::process::exit(1);
+        });
+    let snapshot_packager_niceness_adj = matches
+        .get_one::<String>("snapshot_packager_niceness_adj")
+        .and_then(|s| s.parse::<i8>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("snapshot_packager_niceness_adj is required");
+            std::process::exit(1);
+        });
+    let minimal_snapshot_download_speed = matches
+        .get_one::<String>("minimal_snapshot_download_speed")
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("minimal_snapshot_download_speed is required");
+            std::process::exit(1);
+        });
+    let maximum_snapshot_download_abort = matches
+        .get_one::<String>("maximum_snapshot_download_abort")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("maximum_snapshot_download_abort is required");
+            std::process::exit(1);
+        });
 
     let snapshots_dir = if let Some(snapshots) = matches.get_one::<String>("snapshots") {
         Path::new(snapshots)
@@ -864,12 +1046,23 @@ pub fn execute(
     })?;
 
     let archive_format = {
-        let archive_format_str = value_t_or_exit!(matches, "snapshot_archive_format", String);
+        let archive_format_str = matches
+            .get_one::<String>("snapshot_archive_format")
+            .and_then(|s| s.parse::<String>().ok())
+            .unwrap_or_else(|| {
+                eprintln!("snapshot_archive_format is required");
+                std::process::exit(1);
+            });
         let mut archive_format = ArchiveFormat::from_cli_arg(&archive_format_str)
             .unwrap_or_else(|| panic!("Archive format not recognized: {archive_format_str}"));
         if let ArchiveFormat::TarZstd { config } = &mut archive_format {
-            config.compression_level =
-                value_t_or_exit!(matches, "snapshot_zstd_compression_level", i32);
+            config.compression_level = matches
+                .get_one::<String>("snapshot_zstd_compression_level")
+                .and_then(|s| s.parse::<i32>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("snapshot_zstd_compression_level is required");
+                    std::process::exit(1);
+                });
         }
         archive_format
     };
@@ -891,13 +1084,26 @@ pub fn execute(
         } else {
             match (
                 run_args.rpc_bootstrap_config.incremental_snapshot_fetch,
-                value_t_or_exit!(matches, "snapshot_interval_slots", NonZeroU64),
+                matches
+                    .get_one::<String>("snapshot_interval_slots")
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .and_then(NonZeroU64::new)
+                    .unwrap_or_else(|| {
+                        eprintln!("snapshot_interval_slots is required");
+                        std::process::exit(1);
+                    }),
             ) {
                 (true, incremental_snapshot_interval_slots) => {
                     // incremental snapshots are enabled
                     // use --snapshot-interval-slots for the incremental snapshot interval
-                    let full_snapshot_interval_slots =
-                        value_t_or_exit!(matches, "full_snapshot_interval_slots", NonZeroU64);
+                    let full_snapshot_interval_slots = matches
+                        .get_one::<String>("full_snapshot_interval_slots")
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .and_then(NonZeroU64::new)
+                        .unwrap_or_else(|| {
+                            eprintln!("full_snapshot_interval_slots is required");
+                            std::process::exit(1);
+                        });
                     (
                         SnapshotInterval::Slots(full_snapshot_interval_slots),
                         SnapshotInterval::Slots(incremental_snapshot_interval_slots),
@@ -977,11 +1183,13 @@ pub fn execute(
     }
 
     configure_banking_trace_dir_byte_limit(&mut validator_config, matches);
-    validator_config.block_verification_method = value_t_or_exit!(
-        matches,
-        "block_verification_method",
-        BlockVerificationMethod
-    );
+    validator_config.block_verification_method = matches
+        .get_one::<String>("block_verification_method")
+        .and_then(|s| BlockVerificationMethod::from_str(s).ok())
+        .unwrap_or_else(|| {
+            eprintln!("block_verification_method is required");
+            std::process::exit(1);
+        });
     match validator_config.block_verification_method {
         BlockVerificationMethod::BlockstoreProcessor => {
             warn!(
@@ -993,19 +1201,25 @@ pub fn execute(
         }
         BlockVerificationMethod::UnifiedScheduler => {}
     }
-    validator_config.block_production_method = value_t_or_exit!(
-        matches, // comment to align formatting...
-        "block_production_method",
-        BlockProductionMethod
-    );
-    validator_config.transaction_struct = value_t_or_exit!(
-        matches, // comment to align formatting...
-        "transaction_struct",
-        TransactionStructure
-    );
+    validator_config.block_production_method = matches
+        .get_one::<String>("block_production_method")
+        .and_then(|s| BlockProductionMethod::from_str(s).ok())
+        .unwrap_or_else(|| {
+            eprintln!("block_production_method is required");
+            std::process::exit(1);
+        });
+    validator_config.transaction_struct = matches
+        .get_one::<String>("transaction_struct")
+        .and_then(|s| TransactionStructure::from_str(s).ok())
+        .unwrap_or_else(|| {
+            eprintln!("transaction_struct is required");
+            std::process::exit(1);
+        });
     validator_config.enable_block_production_forwarding = staked_nodes_overrides_path.is_some();
     validator_config.unified_scheduler_handler_threads =
-        value_t!(matches, "unified_scheduler_handler_threads", usize).ok();
+        matches
+            .get_one::<String>("unified_scheduler_handler_threads")
+            .and_then(|s| s.parse::<usize>().ok());
 
     let public_rpc_addr = matches
         .get_one::<String>("public_rpc_addr")
@@ -1102,10 +1316,18 @@ pub fn execute(
     } else {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     };
-    let gossip_port = value_t!(matches, "gossip_port", u16).or_else(|_| {
-        solana_net_utils::find_available_port_in_range(bind_addresses.primary(), (0, 1))
-            .map_err(|err| format!("unable to find an available gossip port: {err}"))
-    })?;
+    let gossip_port = matches
+        .get_one::<String>("gossip_port")
+        .and_then(|s| s.parse::<u16>().ok())
+        .or_else(|| {
+            solana_net_utils::find_available_port_in_range(bind_addresses.primary(), (0, 1))
+                .map_err(|err| format!("unable to find an available gossip port: {err}"))
+                .ok()
+        })
+        .ok_or_else(|| {
+            eprintln!("unable to find an available gossip port");
+            std::process::exit(1);
+        });
 
     let public_tpu_addr = matches
         .get_one::<String>("public_tpu_addr")
@@ -1136,26 +1358,70 @@ pub fn execute(
             });
 
     info!("tpu_vortexor_receiver_address is {tpu_vortexor_receiver_address:?}");
-    let num_quic_endpoints = value_t_or_exit!(matches, "num_quic_endpoints", NonZeroUsize);
+    let num_quic_endpoints = matches
+        .get_one::<String>("num_quic_endpoints")
+        .and_then(|s| s.parse::<usize>().ok())
+        .and_then(NonZeroUsize::new)
+        .unwrap_or_else(|| {
+            eprintln!("num_quic_endpoints is required");
+            std::process::exit(1);
+        });
 
-    let tpu_max_connections_per_peer =
-        value_t_or_exit!(matches, "tpu_max_connections_per_peer", u64);
-    let tpu_max_staked_connections = value_t_or_exit!(matches, "tpu_max_staked_connections", u64);
-    let tpu_max_unstaked_connections =
-        value_t_or_exit!(matches, "tpu_max_unstaked_connections", u64);
+    let tpu_max_connections_per_peer = matches
+        .get_one::<String>("tpu_max_connections_per_peer")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_connections_per_peer is required");
+            std::process::exit(1);
+        });
+    let tpu_max_staked_connections = matches
+        .get_one::<String>("tpu_max_staked_connections")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_staked_connections is required");
+            std::process::exit(1);
+        });
+    let tpu_max_unstaked_connections = matches
+        .get_one::<String>("tpu_max_unstaked_connections")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_unstaked_connections is required");
+            std::process::exit(1);
+        });
 
-    let tpu_max_fwd_staked_connections =
-        value_t_or_exit!(matches, "tpu_max_fwd_staked_connections", u64);
-    let tpu_max_fwd_unstaked_connections =
-        value_t_or_exit!(matches, "tpu_max_fwd_unstaked_connections", u64);
+    let tpu_max_fwd_staked_connections = matches
+        .get_one::<String>("tpu_max_fwd_staked_connections")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_fwd_staked_connections is required");
+            std::process::exit(1);
+        });
+    let tpu_max_fwd_unstaked_connections = matches
+        .get_one::<String>("tpu_max_fwd_unstaked_connections")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_fwd_unstaked_connections is required");
+            std::process::exit(1);
+        });
 
-    let tpu_max_connections_per_ipaddr_per_minute: u64 =
-        value_t_or_exit!(matches, "tpu_max_connections_per_ipaddr_per_minute", u64);
-    let max_streams_per_ms = value_t_or_exit!(matches, "tpu_max_streams_per_ms", u64);
+    let tpu_max_connections_per_ipaddr_per_minute: u64 = matches
+        .get_one::<String>("tpu_max_connections_per_ipaddr_per_minute")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_connections_per_ipaddr_per_minute is required");
+            std::process::exit(1);
+        });
+    let max_streams_per_ms = matches
+        .get_one::<String>("tpu_max_streams_per_ms")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("tpu_max_streams_per_ms is required");
+            std::process::exit(1);
+        });
 
     let node_config = NodeConfig {
         advertised_ip,
-        gossip_port,
+        gossip_port: gossip_port.map_err(|_| "unable to find an available gossip port".to_string())?,
         port_range: dynamic_port_range,
         bind_ip_addrs: bind_addresses,
         public_tpu_addr,
@@ -1214,7 +1480,7 @@ pub fn execute(
     }
 
     solana_metrics::set_host_id(identity_keypair.pubkey().to_string());
-    solana_metrics::set_panic_hookSome(("validator", String::from(solana_version)));
+    solana_metrics::set_panic_hook("validator", Some(String::from(solana_version)));
     solana_entry::entry::init_poh();
     snapshot_utils::remove_tmp_snapshot_archives(&full_snapshot_archives_dir);
     snapshot_utils::remove_tmp_snapshot_archives(&incremental_snapshot_archives_dir);
@@ -1336,7 +1602,11 @@ pub fn execute(
 // This function is duplicated in ledger-tool/src/main.rs...
 fn hardforks_of(matches: &ArgMatches, name: &str) -> Option<Vec<Slot>> {
     if matches.get_flag(name) {
-        Some(values_t_or_exit!(matches, name, Slot))
+        Some(matches
+            .get_many::<String>(name)
+            .expect(&format!("{} should be present when flag is set", name))
+            .map(|s| Slot::from_str(s).expect("invalid slot"))
+            .collect())
     } else {
         None
     }
@@ -1349,8 +1619,10 @@ fn validators_set(
     arg_name: &str,
 ) -> Result<Option<HashSet<Pubkey>>, String> {
     if matches.get_flag(matches_name) {
-        let validators_set: HashSet<_> = values_t_or_exit!(matches, matches_name, Pubkey)
-            .into_iter()
+        let validators_set: HashSet<_> = matches
+            .get_many::<String>(matches_name)
+            .expect(&format!("{} should be present when flag is set", matches_name))
+            .map(|s| Pubkey::from_str(s).expect("invalid pubkey"))
             .collect();
         if validators_set.contains(identity_pubkey) {
             Err(format!(
@@ -1397,7 +1669,13 @@ fn configure_banking_trace_dir_byte_limit(
     } else {
         // a default value in clap configuration (BANKING_TRACE_DIR_DEFAULT_BYTE_LIMIT) or
         // explicit user-supplied override value
-        value_t_or_exit!(matches, "banking_trace_dir_byte_limit", u64)
+        matches
+            .get_one::<String>("banking_trace_dir_byte_limit")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or_else(|| {
+                eprintln!("banking_trace_dir_byte_limit is required");
+                std::process::exit(1);
+            })
     };
 }
 
@@ -1414,18 +1692,14 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
         .collect();
 
     let account_indexes_include_keys: HashSet<Pubkey> =
-        values_t!(matches, "account_index_include_key", Pubkey)
-            .unwrap_or_default()
-            .iter()
-            .cloned()
-            .collect();
+        matches.get_many::<String>("account_index_include_key")
+            .map(|values| values.filter_map(|s| s.parse().ok()).collect())
+            .unwrap_or_default();
 
     let account_indexes_exclude_keys: HashSet<Pubkey> =
-        values_t!(matches, "account_index_exclude_key", Pubkey)
-            .unwrap_or_default()
-            .iter()
-            .cloned()
-            .collect();
+        matches.get_many::<String>("account_index_exclude_key")
+            .map(|values| values.filter_map(|s| s.parse().ok()).collect())
+            .unwrap_or_default();
 
     let exclude_keys = !account_indexes_exclude_keys.is_empty();
     let include_keys = !account_indexes_include_keys.is_empty();

@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, Arg, ArgMatches, Command, ArgAction},
+    clap::{Arg, ArgMatches, Command, ArgAction},
     solana_clap_utils::input_validators::is_keypair,
     solana_keypair::read_keypair,
     solana_signer::Signer,
@@ -21,7 +21,7 @@ pub struct AuthorizedVoterAddArgs {
 impl FromClapArgMatches for AuthorizedVoterAddArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(AuthorizedVoterAddArgs {
-            authorized_voter_keypair: value_t!(matches, "authorized_voter_keypair", String).ok(),
+            authorized_voter_keypair: matches.get_one::<String>("authorized_voter_keypair").cloned(),
         })
     }
 }
@@ -98,7 +98,7 @@ pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
                 })?;
             }
         }
-        Some(Some(("remove-all", _))) => {
+        Some(("remove-all", _)) => {
             let admin_client = admin_rpc_service::connect(ledger_path);
             admin_rpc_service::runtime().block_on(async move {
                 admin_client.await?.remove_all_authorized_voters().await

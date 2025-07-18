@@ -3,7 +3,7 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, Arg, ArgMatches, Command, ArgAction},
+    clap::{Arg, ArgMatches, Command, ArgAction},
     std::path::Path,
 };
 
@@ -17,7 +17,10 @@ pub struct PluginUnloadArgs {
 impl FromClapArgMatches for PluginUnloadArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(PluginUnloadArgs {
-            name: value_t!(matches, "name", String)?,
+            name: matches.get_one::<String>("name").cloned().unwrap_or_else(|| {
+                eprintln!("name is required");
+                std::process::exit(1);
+            }),
         })
     }
 }
@@ -30,7 +33,10 @@ pub struct PluginLoadArgs {
 impl FromClapArgMatches for PluginLoadArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(PluginLoadArgs {
-            config: value_t!(matches, "config", String)?,
+            config: matches.get_one::<String>("config").cloned().unwrap_or_else(|| {
+                eprintln!("config is required");
+                std::process::exit(1);
+            }),
         })
     }
 }
@@ -44,8 +50,14 @@ pub struct PluginReloadArgs {
 impl FromClapArgMatches for PluginReloadArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(PluginReloadArgs {
-            name: value_t!(matches, "name", String)?,
-            config: value_t!(matches, "config", String)?,
+            name: matches.get_one::<String>("name").cloned().unwrap_or_else(|| {
+                eprintln!("name is required");
+                std::process::exit(1);
+            }),
+            config: matches.get_one::<String>("config").cloned().unwrap_or_else(|| {
+                eprintln!("config is required");
+                std::process::exit(1);
+            }),
         })
     }
 }
@@ -85,7 +97,7 @@ pub fn command() -> Command {
 
 pub fn execute(matches: &ArgMatches, ledger_path: &Path) -> Result<()> {
     match matches.subcommand() {
-        Some(Some(("list", _))) => {
+        Some(("list", _)) => {
             let admin_client = admin_rpc_service::connect(ledger_path);
             let plugins = admin_rpc_service::runtime()
                 .block_on(async move { admin_client.await?.list_plugins().await })?;

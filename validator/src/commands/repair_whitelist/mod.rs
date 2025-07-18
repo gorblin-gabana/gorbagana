@@ -3,12 +3,12 @@ use {
         admin_rpc_service,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{values_t, Arg, ArgMatches, Command, ArgAction},
+    clap::{Arg, ArgMatches, Command, ArgAction},
     itertools::Itertools,
     solana_clap_utils::input_validators::is_pubkey,
     solana_cli_output::OutputFormat,
     solana_pubkey::Pubkey,
-    std::path::Path,
+    std::{path::Path, str::FromStr},
 };
 
 pub const COMMAND: &str = "repair-whitelist";
@@ -37,8 +37,10 @@ pub struct RepairWhitelistSetArgs {
 
 impl FromClapArgMatches for RepairWhitelistSetArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
-        let whitelist = values_t!(matches, "whitelist", Pubkey)?
-            .into_iter()
+        let whitelist = matches
+            .get_many::<String>("whitelist")
+            .expect("whitelist should be present")
+            .map(|s| Pubkey::from_str(s).expect("invalid pubkey"))
             .unique()
             .collect::<Vec<_>>();
         Ok(RepairWhitelistSetArgs { whitelist })

@@ -59,8 +59,7 @@ pub fn command() -> Command {
         .group(
             ArgGroup::new("set_public_address_details")
                 .args(["tpu_addr", "tpu_forwards_addr"])
-                .required(true)
-                .action(ArgAction::Append),
+                .required(true),
         )
         .after_help("Note: At least one arg must be used. Using multiple is ok")
 }

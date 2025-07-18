@@ -11,7 +11,7 @@ use {
     solana_clap_utils::{
         hidden_unless_forced,
         input_validators::{
-            is_parsable, is_pubkey, is_pubkey_or_keypair, is_slot, is_url_or_moniker,
+            is_url_or_moniker,
         },
     },
     solana_clock::Slot,
@@ -52,13 +52,15 @@ const MAX_SNAPSHOT_DOWNLOAD_ABORT: u32 = 5;
 const MINIMUM_TICKS_PER_SLOT: u64 = 2;
 
 pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> Command {
-    let app = App::new(crate_name!())
+    let app = Command::new(crate_name!())
         .about(crate_description!())
-        .version(version)
-        .global_setting(AppSettings::ColoredHelp)
-        .global_setting(AppSettings::InferSubcommands)
-        .global_setting(AppSettings::UnifiedHelpMessage)
-        .global_setting(AppSettings::VersionlessSubcommands)
+        .version((*Box::leak(Box::new(version.to_string()))).as_str())
+        .help_template("\
+{before-help}{name} {version}
+{author-with-newline}{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}")
         .subcommand(commands::exit::command())
         .subcommand(commands::authorized_voter::command())
         .subcommand(commands::contact_info::command())
@@ -89,7 +91,7 @@ struct DeprecatedArg {
     ///
     /// `hidden` property will be modified by [`deprecated_arguments()`] to only show this argument
     /// if [`hidden_unless_forced()`] says they should be displayed.
-    arg: Arg<'static, 'static>,
+    arg: Arg,
 
     /// If simply replaced by a different argument, this is the name of the replacement.
     ///
@@ -135,13 +137,13 @@ fn deprecated_arguments() -> Vec<DeprecatedArg> {
 
 // Helper to add arguments that are no longer used but are being kept around to avoid breaking
 // validator startup commands.
-fn get_deprecated_arguments() -> Vec<Arg<'static, 'static>> {
+fn get_deprecated_arguments() -> Vec<Arg> {
     deprecated_arguments()
         .into_iter()
         .map(|info| {
             let arg = info.arg;
             // Hide all deprecated arguments by default.
-            arg.hidden(hidden_unless_forced())
+            arg.hide(hidden_unless_forced())
         })
         .collect()
 }
@@ -153,8 +155,8 @@ pub fn warn_for_deprecated_arguments(matches: &ArgMatches) {
         usage_warning,
     } in deprecated_arguments().into_iter()
     {
-        if matches.get_flag(arg.b.name) {
-            let mut msg = format!("--{} is deprecated", arg.b.name.replace('_', "-"));
+        if matches.get_flag(arg.get_id().as_str()) {
+            let mut msg = format!("--{} is deprecated", arg.get_id().as_str().replace('_', "-"));
             if let Some(replaced_by) = replaced_by {
                 msg.push_str(&format!(", please use --{replaced_by}"));
             }
@@ -379,29 +381,29 @@ pub(crate) fn hash_validator(hash: String) -> Result<(), String> {
 
 /// Test validator
 pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Command {
-    App::new("solana-test-validator")
+    Command::new("solana-test-validator")
         .about("Test Validator")
-        .version(version)
+        .version((*Box::leak(Box::new(version.to_string()))).as_str())
         .arg({
             let arg = Arg::new("config_file")
-                .short("C")
+                .short('C')
                 .long("config")
                 .value_name("PATH")
                 
                 .help("Configuration file to use");
             if let Some(ref config_file) = *solana_cli_config::CONFIG_FILE {
-                arg.default_value(config_file)
+                arg.default_value(config_file.as_str())
             } else {
                 arg
             }
         })
         .arg(
             Arg::new("json_rpc_url")
-                .short("u")
+                .short('u')
                 .long("url")
                 .value_name("URL_OR_MONIKER")
                 
-                .validator(is_url_or_moniker)
+                .value_parser(|s: &str| is_url_or_moniker(s.to_string()))
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
                      [mainnet-beta, testnet, devnet, localhost]",
@@ -411,7 +413,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("mint_address")
                 .long("mint")
                 .value_name("PUBKEY")
-                .validator(is_pubkey)
+                .value_parser(clap::value_parser!(String))
                 
                 .help(
                     "Address of the mint account that will receive tokens created at genesis. If \
@@ -421,7 +423,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
         )
         .arg(
             Arg::new("ledger_path")
-                .short("l")
+                .short('l')
                 .long("ledger")
                 .value_name("DIR")
                 
@@ -431,7 +433,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
         )
         .arg(
             Arg::new("reset")
-                .short("r")
+                .short('r')
                 .long("reset")
                 .action(ArgAction::SetTrue)
                 .help(
@@ -441,7 +443,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
         )
         .arg(
             Arg::new("quiet")
-                .short("q")
+                .short('q')
                 .long("quiet")
                 .action(ArgAction::SetTrue)
                 .conflicts_with("log")
@@ -459,7 +461,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("account-index")
                 
                 .action(ArgAction::Append)
-                .possible_values(&["program-id", "spl-token-owner", "spl-token-mint"])
+                .value_parser(["program-id", "spl-token-owner", "spl-token-mint"])
                 .value_name("INDEX")
                 .help("Enable an accounts index, indexed by the selected account field"),
         )
@@ -468,8 +470,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("faucet-port")
                 .value_name("PORT")
                 
-                .default_value(&default_args.faucet_port)
-                .validator(port_validator)
+                .default_value(Box::leak(Box::new(default_args.faucet_port.clone())).as_str())
+                .value_parser(|s: &str| port_validator(s.to_string()))
                 .help("Enable the faucet on this port"),
         )
         .arg(
@@ -477,15 +479,15 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("rpc-port")
                 .value_name("PORT")
                 
-                .default_value(&default_args.rpc_port)
-                .validator(port_validator)
+                .default_value(Box::leak(Box::new(default_args.rpc_port.clone())).as_str())
+                .value_parser(|s: &str| port_validator(s.to_string()))
                 .help("Enable JSON RPC on this port, and the next port for the RPC websocket"),
         )
         .arg(
             Arg::new("enable_rpc_bigtable_ledger_storage")
                 .long("enable-rpc-bigtable-ledger-storage")
                 .action(ArgAction::SetTrue)
-                .hidden(hidden_unless_forced())
+                .hide(hidden_unless_forced())
                 .help(
                     "Fetch historical transaction info from a BigTable instance as a fallback to \
                      local ledger data",
@@ -495,7 +497,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("enable_bigtable_ledger_upload")
                 .long("enable-bigtable-ledger-upload")
                 .action(ArgAction::SetTrue)
-                .hidden(hidden_unless_forced())
+                .hide(hidden_unless_forced())
                 .help("Upload new confirmed blocks into a BigTable instance"),
         )
         .arg(
@@ -503,7 +505,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("rpc-bigtable-instance")
                 .value_name("INSTANCE_NAME")
                 
-                .hidden(hidden_unless_forced())
+                .hide(hidden_unless_forced())
                 .default_value("solana-ledger")
                 .help("Name of BigTable instance to target"),
         )
@@ -512,7 +514,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("rpc-bigtable-app-profile-id")
                 .value_name("APP_PROFILE_ID")
                 
-                .hidden(hidden_unless_forced())
+                .hide(hidden_unless_forced())
                 .default_value(solana_storage_bigtable::DEFAULT_APP_PROFILE_ID)
                 .help("Application profile id to use in Bigtable requests"),
         )
@@ -575,7 +577,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("account_dir")
                 .long("account-dir")
                 .value_name("DIRECTORY")
-                .validator(|value| {
+                .value_parser(|value: &str| {
                     value
                         .parse::<PathBuf>()
                         .map_err(|err| format!("error parsing '{value}': {err}"))
@@ -601,7 +603,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("ticks_per_slot")
                 .long("ticks-per-slot")
                 .value_name("TICKS")
-                .validator(|value| {
+                .value_parser(|value: &str| {
                     value
                         .parse::<u64>()
                         .map_err(|err| format!("error parsing '{value}': {err}"))
@@ -620,7 +622,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("slots_per_epoch")
                 .long("slots-per-epoch")
                 .value_name("SLOTS")
-                .validator(|value| {
+                .value_parser(|value: &str| {
                     value
                         .parse::<Slot>()
                         .map_err(|err| format!("error parsing '{value}': {err}"))
@@ -642,7 +644,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("inflation_fixed")
                 .long("inflation-fixed")
                 .value_name("RATE")
-                .validator(|value| {
+                .value_parser(|value: &str| {
                     value
                         .parse::<f64>()
                         .map_err(|err| format!("error parsing '{value}': {err}"))
@@ -670,8 +672,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("gossip-host")
                 .value_name("HOST")
                 
-                .validator(solana_net_utils::is_host)
-                .hidden(hidden_unless_forced())
+                .value_parser(|s: &str| solana_net_utils::is_host(s.to_string()))
+                .hide(hidden_unless_forced())
                 .help("DEPRECATED: Use --bind-address instead."),
         )
         .arg(
@@ -679,7 +681,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("dynamic-port-range")
                 .value_name("MIN_PORT-MAX_PORT")
                 
-                .validator(port_range_validator)
+                .value_parser(|s: &str| port_range_validator(s.to_string()))
                 .help("Range to use for dynamically assigned ports [default: 1024-65535]"),
         )
         .arg(
@@ -687,17 +689,17 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("bind-address")
                 .value_name("HOST")
                 
-                .validator(solana_net_utils::is_host)
+                .value_parser(|s: &str| solana_net_utils::is_host(s.to_string()))
                 .default_value("127.0.0.1")
                 .help("IP address to bind the validator ports [default: 127.0.0.1]"),
         )
         .arg(
             Arg::new("clone_account")
                 .long("clone")
-                .short("c")
+                .short('c')
                 .value_name("ADDRESS")
                 
-                .validator(is_pubkey_or_keypair)
+                .value_parser(clap::value_parser!(String))
                 .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
@@ -710,7 +712,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("deep_clone_address_lookup_table")
                 .long("deep-clone-address-lookup-table")
                 
-                .validator(is_pubkey_or_keypair)
+                .value_parser(clap::value_parser!(String))
                 .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
@@ -724,7 +726,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("maybe-clone")
                 .value_name("ADDRESS")
                 
-                .validator(is_pubkey_or_keypair)
+                .value_parser(clap::value_parser!(String))
                 .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
@@ -738,7 +740,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("clone-upgradeable-program")
                 .value_name("ADDRESS")
                 
-                .validator(is_pubkey_or_keypair)
+                .value_parser(clap::value_parser!(String))
                 .action(ArgAction::Append)
                 .requires("json_rpc_url")
                 .help(
@@ -751,12 +753,12 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("warp_slot")
                 .required(false)
                 .long("warp-slot")
-                .short("w")
+                .short('w')
                 
                 .value_name("WARP_SLOT")
-                .validator(is_slot)
-                .min_values(0)
-                .max_values(1)
+                .value_parser(clap::value_parser!(u64))
+                .num_args(0..)
+                
                 .help(
                     "Warp the ledger to WARP_SLOT after starting the validator. If no slot is \
                      provided then the current slot of the cluster referenced by the --url \
@@ -768,7 +770,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("limit-ledger-size")
                 .value_name("SHRED_COUNT")
                 
-                .default_value(default_args.limit_ledger_size.as_str())
+                .default_value(Box::leak(Box::new(default_args.limit_ledger_size.clone())).as_str())
                 .help("Keep this amount of shreds in root slots."),
         )
         .arg(
@@ -776,7 +778,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("faucet-sol")
                 
                 .value_name("SOL")
-                .default_value(default_args.faucet_sol.as_str())
+                .default_value(Box::leak(Box::new(default_args.faucet_sol.clone())).as_str())
                 .help(
                     "Give the faucet address this much SOL in genesis. If the ledger already \
                      exists then this parameter is silently ignored",
@@ -787,7 +789,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("faucet-time-slice-secs")
                 
                 .value_name("SECS")
-                .default_value(default_args.faucet_time_slice_secs.as_str())
+                .default_value(Box::leak(Box::new(default_args.faucet_time_slice_secs.clone())).as_str())
                 .help("Time slice (in secs) over which to limit faucet requests"),
         )
         .arg(
@@ -795,8 +797,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("faucet-per-time-sol-cap")
                 
                 .value_name("SOL")
-                .min_values(0)
-                .max_values(1)
+                .num_args(0..)
+                
                 .help("Per-time slice limit for faucet requests, in SOL"),
         )
         .arg(
@@ -804,8 +806,8 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("faucet-per-request-sol-cap")
                 
                 .value_name("SOL")
-                .min_values(0)
-                .max_values(1)
+                .num_args(0..)
+                
                 .help("Per-request limit for faucet requests, in SOL"),
         )
         .arg(
@@ -822,7 +824,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("deactivate-feature")
                 
                 .value_name("FEATURE_PUBKEY")
-                .validator(is_pubkey)
+                .value_parser(clap::value_parser!(String))
                 .action(ArgAction::Append)
                 .help("deactivate this feature in genesis."),
         )
@@ -831,7 +833,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
                 .long("compute-unit-limit")
                 .alias("max-compute-units")
                 .value_name("COMPUTE_UNITS")
-                .validator(is_parsable::<u64>)
+                .value_parser(clap::value_parser!(String))
                 
                 .help("Override the runtime's compute unit limit per transaction"),
         )
@@ -839,7 +841,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("log_messages_bytes_limit")
                 .long("log-messages-bytes-limit")
                 .value_name("BYTES")
-                .validator(is_parsable::<usize>)
+                .value_parser(clap::value_parser!(String))
                 
                 .help("Maximum number of bytes written to the program log before truncation"),
         )
@@ -847,7 +849,7 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> Comm
             Arg::new("transaction_account_lock_limit")
                 .long("transaction-account-lock-limit")
                 .value_name("NUM_ACCOUNTS")
-                .validator(is_parsable::<u64>)
+                .value_parser(clap::value_parser!(String))
                 
                 .help("Override the runtime's account lock limit per transaction"),
         )

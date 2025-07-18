@@ -40,7 +40,7 @@ pub fn explicit_release_of(
     name: &str,
 ) -> Option<config::ExplicitRelease> {
     matches
-        .value_of(name)
+        .get_one::<String>(name)
         .map(ToString::to_string)
         .map(|explicit_release| {
             if explicit_release.starts_with('v')
@@ -56,10 +56,10 @@ pub fn explicit_release_of(
 }
 
 fn handle_init(matches: &ArgMatches, config_file: &str) -> Result<(), String> {
-    let json_rpc_url = matches.value_of("json_rpc_url").unwrap();
+    let json_rpc_url = matches.get_one::<String>("json_rpc_url").unwrap();
     let update_manifest_pubkey = pubkey_of(matches, "update_manifest_pubkey");
-    let data_dir = matches.value_of("data_dir").unwrap();
-    let no_modify_path = matches.is_present("no_modify_path");
+    let data_dir = matches.get_one::<String>("data_dir").unwrap();
+    let no_modify_path = matches.get_flag("no_modify_path");
     let explicit_release = explicit_release_of(matches, "explicit_release");
 
     if update_manifest_pubkey.is_none() && explicit_release.is_none() {
@@ -87,11 +87,11 @@ pub fn main() -> Result<(), String> {
         .version(solana_version::version!())
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .arg({
-            let arg = Arg::with_name("config_file")
+            let arg = Arg::new("config_file")
                 .short('c')
                 .long("config")
                 .value_name("PATH")
-                .takes_value(true)
+                
                 .global(true)
                 .help("Configuration file to use");
             match *defaults::CONFIG_FILE {
@@ -104,11 +104,11 @@ pub fn main() -> Result<(), String> {
                 .about("Initializes a new installation")
                 .setting(AppSettings::DisableVersion)
                 .arg({
-                    let arg = Arg::with_name("data_dir")
+                    let arg = Arg::new("data_dir")
                         .short('d')
                         .long("data-dir")
                         .value_name("PATH")
-                        .takes_value(true)
+                        
                         .required(true)
                         .help("Directory to store install data");
                     match *defaults::DATA_DIR {
@@ -117,31 +117,31 @@ pub fn main() -> Result<(), String> {
                     }
                 })
                 .arg(
-                    Arg::with_name("json_rpc_url")
+                    Arg::new("json_rpc_url")
                         .short('u')
                         .long("url")
                         .value_name("URL")
-                        .takes_value(true)
+                        
                         .default_value(defaults::JSON_RPC_URL)
                         .validator(|arg| is_url(arg))
                         .help("JSON RPC URL for the solana cluster"),
                 )
                 .arg(
-                    Arg::with_name("no_modify_path")
+                    Arg::new("no_modify_path")
                         .long("no-modify-path")
                         .help("Don't configure the PATH environment variable"),
                 )
                 .arg(
-                    Arg::with_name("update_manifest_pubkey")
+                    Arg::new("update_manifest_pubkey")
                         .short('p')
                         .long("pubkey")
                         .value_name("PUBKEY")
-                        .takes_value(true)
+                        
                         .validator(|arg| is_pubkey(arg))
                         .help("Public key of the update manifest"),
                 )
                 .arg(
-                    Arg::with_name("explicit_release")
+                    Arg::new("explicit_release")
                         .value_name("release")
                         .index(1)
                         .conflicts_with_all(&["json_rpc_url", "update_manifest_pubkey"])
@@ -154,13 +154,13 @@ pub fn main() -> Result<(), String> {
                 .about("Displays information about the current installation")
                 .setting(AppSettings::DisableVersion)
                 .arg(
-                    Arg::with_name("local_info_only")
+                    Arg::new("local_info_only")
                         .short('l')
                         .long("local")
                         .help("Only display local information, don't check for updates"),
                 )
                 .arg(
-                    Arg::with_name("eval")
+                    Arg::new("eval")
                         .long("eval")
                         .help("Display information in a format that can be used with `eval`"),
                 ),
@@ -170,11 +170,11 @@ pub fn main() -> Result<(), String> {
                 .about("Deploys a new update")
                 .setting(AppSettings::DisableVersion)
                 .arg({
-                    let arg = Arg::with_name("from_keypair_file")
+                    let arg = Arg::new("from_keypair_file")
                         .short('k')
                         .long("keypair")
                         .value_name("PATH")
-                        .takes_value(true)
+                        
                         .required(true)
                         .help("Keypair file of the account that funds the deployment");
                     match *defaults::USER_KEYPAIR {
@@ -183,24 +183,24 @@ pub fn main() -> Result<(), String> {
                     }
                 })
                 .arg(
-                    Arg::with_name("json_rpc_url")
+                    Arg::new("json_rpc_url")
                         .short('u')
                         .long("url")
                         .value_name("URL")
-                        .takes_value(true)
+                        
                         .default_value(defaults::JSON_RPC_URL)
                         .validator(|arg| is_url(arg))
                         .help("JSON RPC URL for the solana cluster"),
                 )
                 .arg(
-                    Arg::with_name("download_url")
+                    Arg::new("download_url")
                         .index(1)
                         .required(true)
                         .validator(|arg| is_url(arg))
                         .help("URL to the solana release archive"),
                 )
                 .arg(
-                    Arg::with_name("update_manifest_keypair_file")
+                    Arg::new("update_manifest_keypair_file")
                         .index(2)
                         .required(true)
                         .help("Keypair file for the update manifest (/path/to/keypair.json)"),
@@ -222,13 +222,13 @@ pub fn main() -> Result<(), String> {
                 .after_help("The program will be restarted upon a successful software update")
                 .setting(AppSettings::DisableVersion)
                 .arg(
-                    Arg::with_name("program_name")
+                    Arg::new("program_name")
                         .index(1)
                         .required(true)
                         .help("program to run"),
                 )
                 .arg(
-                    Arg::with_name("program_arguments")
+                    Arg::new("program_arguments")
                         .index(2)
                         .multiple(true)
                         .help("Arguments to supply to the program"),
@@ -237,21 +237,21 @@ pub fn main() -> Result<(), String> {
         .subcommand(SubCommand::with_name("list").about("List installed versions of solana cli"))
         .get_matches();
 
-    let config_file = matches.value_of("config_file").unwrap();
+    let config_file = matches.get_one::<String>("config_file").unwrap();
 
     match matches.subcommand() {
         Some(("init", matches)) => handle_init(matches, config_file),
         Some(("info", matches)) => {
-            let local_info_only = matches.is_present("local_info_only");
-            let eval = matches.is_present("eval");
+            let local_info_only = matches.get_flag("local_info_only");
+            let eval = matches.get_flag("eval");
             command::info(config_file, local_info_only, eval).map(|_| ())
         }
         Some(("deploy", matches)) => {
-            let from_keypair_file = matches.value_of("from_keypair_file").unwrap();
-            let json_rpc_url = matches.value_of("json_rpc_url").unwrap();
-            let download_url = matches.value_of("download_url").unwrap();
+            let from_keypair_file = matches.get_one::<String>("from_keypair_file").unwrap();
+            let json_rpc_url = matches.get_one::<String>("json_rpc_url").unwrap();
+            let download_url = matches.get_one::<String>("download_url").unwrap();
             let update_manifest_keypair_file =
-                matches.value_of("update_manifest_keypair_file").unwrap();
+                matches.get_one::<String>("update_manifest_keypair_file").unwrap();
             command::deploy(
                 json_rpc_url,
                 from_keypair_file,
@@ -262,7 +262,7 @@ pub fn main() -> Result<(), String> {
         Some(("gc", _matches)) => command::gc(config_file),
         Some(("update", _matches)) => command::update(config_file, false).map(|_| ()),
         Some(("run", matches)) => {
-            let program_name = matches.value_of("program_name").unwrap();
+            let program_name = matches.get_one::<String>("program_name").unwrap();
             let program_arguments = matches
                 .values_of("program_arguments")
                 .map(Iterator::collect)
@@ -282,11 +282,11 @@ pub fn main_init() -> Result<(), String> {
         .about("Initializes a new installation")
         .version(solana_version::version!())
         .arg({
-            let arg = Arg::with_name("config_file")
+            let arg = Arg::new("config_file")
                 .short('c')
                 .long("config")
                 .value_name("PATH")
-                .takes_value(true)
+                
                 .help("Configuration file to use");
             match *defaults::CONFIG_FILE {
                 Some(ref config_file) => arg.default_value(config_file),
@@ -294,11 +294,11 @@ pub fn main_init() -> Result<(), String> {
             }
         })
         .arg({
-            let arg = Arg::with_name("data_dir")
+            let arg = Arg::new("data_dir")
                 .short('d')
                 .long("data-dir")
                 .value_name("PATH")
-                .takes_value(true)
+                
                 .required(true)
                 .help("Directory to store install data");
             match *defaults::DATA_DIR {
@@ -307,31 +307,31 @@ pub fn main_init() -> Result<(), String> {
             }
         })
         .arg(
-            Arg::with_name("json_rpc_url")
+            Arg::new("json_rpc_url")
                 .short('u')
                 .long("url")
                 .value_name("URL")
-                .takes_value(true)
+                
                 .default_value(defaults::JSON_RPC_URL)
                 .validator(|arg| is_url(arg))
                 .help("JSON RPC URL for the solana cluster"),
         )
         .arg(
-            Arg::with_name("no_modify_path")
+            Arg::new("no_modify_path")
                 .long("no-modify-path")
                 .help("Don't configure the PATH environment variable"),
         )
         .arg(
-            Arg::with_name("update_manifest_pubkey")
+            Arg::new("update_manifest_pubkey")
                 .short('p')
                 .long("pubkey")
                 .value_name("PUBKEY")
-                .takes_value(true)
+                
                 .validator(|arg| is_pubkey(arg))
                 .help("Public key of the update manifest"),
         )
         .arg(
-            Arg::with_name("explicit_release")
+            Arg::new("explicit_release")
                 .value_name("release")
                 .index(1)
                 .conflicts_with_all(&["json_rpc_url", "update_manifest_pubkey"])
@@ -340,6 +340,6 @@ pub fn main_init() -> Result<(), String> {
         )
         .get_matches();
 
-    let config_file = matches.value_of("config_file").unwrap();
+    let config_file = matches.get_one::<String>("config_file").unwrap();
     handle_init(&matches, config_file)
 }

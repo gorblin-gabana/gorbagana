@@ -4,7 +4,7 @@ use {
         commands::{FromClapArgMatches, Result},
         new_spinner_progress_bar, println_name_value,
     },
-    clap::{value_t_or_exit, Arg, ArgMatches, Command, ArgAction},
+    clap::{Arg, ArgMatches, Command, ArgAction},
     console::style,
     solana_clap_utils::{
         input_parsers::pubkey_of,
@@ -39,9 +39,21 @@ pub struct WaitForRestartWindowArgs {
 impl FromClapArgMatches for WaitForRestartWindowArgs {
     fn from_clap_arg_match(matches: &ArgMatches) -> Result<Self> {
         Ok(WaitForRestartWindowArgs {
-            min_idle_time: value_t_or_exit!(matches, "min_idle_time", usize),
-            identity: pubkey_of(matches, "identity"),
-            max_delinquent_stake: value_t_or_exit!(matches, "max_delinquent_stake", u8),
+            min_idle_time: matches
+                .get_one::<String>("min_idle_time")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("min_idle_time is required");
+                    std::process::exit(1);
+                }),
+            identity: matches.get_one::<String>("identity").and_then(|s| s.parse().ok()),
+            max_delinquent_stake: matches
+                .get_one::<String>("max_delinquent_stake")
+                .and_then(|s| s.parse::<u8>().ok())
+                .unwrap_or_else(|| {
+                    eprintln!("max_delinquent_stake is required");
+                    std::process::exit(1);
+                }),
             skip_new_snapshot_check: matches.get_flag("skip_new_snapshot_check"),
             skip_health_check: matches.get_flag("skip_health_check"),
         })

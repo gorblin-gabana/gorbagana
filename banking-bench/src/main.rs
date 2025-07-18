@@ -319,28 +319,35 @@ fn main() {
         .get_matches();
 
     let block_production_method = matches
-        .value_of_t::<BlockProductionMethod>("block_production_method")
+        .get_one::<String>("block_production_method")
+        .map(|s| s.parse::<BlockProductionMethod>().unwrap())
         .unwrap_or_default();
     let transaction_struct = matches
-        .value_of_t::<TransactionStructure>("transaction_struct")
+        .get_one::<String>("transaction_struct")
+        .map(|s| s.parse::<TransactionStructure>().unwrap())
         .unwrap_or_default();
     let num_banking_threads = matches
-        .value_of_t::<u32>("num_banking_threads")
-        .unwrap_or_else(|_| BankingStage::num_threads());
+        .get_one::<String>("num_banking_threads")
+        .map(|s| s.parse::<u32>().unwrap())
+        .unwrap_or_else(|| BankingStage::num_threads());
     //   a multiple of packet chunk duplicates to avoid races
-    let num_chunks = matches.value_of_t::<usize>("num_chunks").unwrap_or(16);
+    let num_chunks = matches.get_one::<String>("num_chunks").map(|s| s.parse::<usize>().unwrap()).unwrap_or(16);
     let packets_per_batch = matches
-        .value_of_t::<usize>("packets_per_batch")
+        .get_one::<String>("packets_per_batch")
+        .map(|s| s.parse::<usize>().unwrap())
         .unwrap_or(192);
-    let iterations = matches.value_of_t::<usize>("iterations").unwrap_or(1000);
+    let iterations = matches.get_one::<String>("iterations").map(|s| s.parse::<usize>().unwrap()).unwrap_or(1000);
     let batches_per_iteration = matches
-        .value_of_t::<usize>("batches_per_iteration")
+        .get_one::<String>("batches_per_iteration")
+        .map(|s| s.parse::<usize>().unwrap())
         .unwrap_or(BankingStage::num_threads() as usize);
     let write_lock_contention = matches
-        .value_of_t::<WriteLockContention>("write_lock_contention")
+        .get_one::<String>("write_lock_contention")
+        .map(|s| s.parse::<WriteLockContention>().unwrap())
         .unwrap_or(WriteLockContention::None);
     let mint_txs_percentage = matches
-        .value_of_t::<usize>("mint_txs_percentage")
+        .get_one::<String>("mint_txs_percentage")
+        .map(|s| s.parse::<usize>().unwrap())
         .unwrap_or(99);
 
     let mint_total = 1_000_000_000_000;
@@ -366,7 +373,7 @@ fn main() {
             batches_per_iteration,
             genesis_config.hash(),
             write_lock_contention,
-            matches.is_present("simulate_mint"),
+            matches.get_flag("simulate_mint"),
             mint_txs_percentage,
         ))
     })
@@ -401,7 +408,7 @@ fn main() {
             });
     });
 
-    let skip_sanity = matches.is_present("skip_sanity");
+    let skip_sanity = matches.get_flag("skip_sanity");
     if !skip_sanity {
         all_packets.iter().for_each(|packets_for_single_iteration| {
             //sanity check, make sure all the transactions can execute sequentially
@@ -441,7 +448,7 @@ fn main() {
             Some(leader_schedule_cache),
         );
     let (banking_tracer, tracer_thread) =
-        BankingTracer::new(matches.is_present("trace_banking").then_some((
+        BankingTracer::new(matches.get_flag("trace_banking").then_some((
             &blockstore.banking_trace_path(),
             exit.clone(),
             BANKING_TRACE_DIR_DEFAULT_BYTE_LIMIT,

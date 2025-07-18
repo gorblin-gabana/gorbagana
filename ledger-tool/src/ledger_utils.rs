@@ -265,8 +265,8 @@ pub fn load_and_process_ledger(
 
     let geyser_plugin_active = arg_matches.get_flag("geyser_plugin_config");
     let (accounts_update_notifier, transaction_notifier) = if geyser_plugin_active {
-        let geyser_config_files = values_t_or_exit!(arg_matches, "geyser_plugin_config", String)
-            .into_iter()
+        let geyser_config_files = arg_matches.get_many::<String>("geyser_plugin_config").unwrap_or_else(|| std::process::exit(1))
+            .map(|s| s.parse::<String>().unwrap())
             .map(PathBuf::from)
             .collect::<Vec<_>>();
 
@@ -433,9 +433,9 @@ pub fn open_blockstore(
     matches: &ArgMatches,
     access_type: AccessType,
 ) -> Blockstore {
-    let wal_recovery_mode = matches
+          let wal_recovery_mode = matches
         .get_one::<String>("wal_recovery_mode")
-        .map(BlockstoreRecoveryMode::from);
+        .map(|s| BlockstoreRecoveryMode::from(s.as_str()));
     let force_update_to_open = matches.get_flag("force_update_to_open");
     let enforce_ulimit_nofile = !matches.get_flag("ignore_ulimit_nofile_error");
 

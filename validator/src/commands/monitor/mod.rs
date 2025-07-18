@@ -1,6 +1,6 @@
 use {
     crate::{commands::Result, dashboard::Dashboard},
-    clap::{App, ArgMatches, SubCommand},
+    clap::{ArgMatches, Command},
     std::{path::Path, time::Duration},
 };
 

@@ -301,7 +301,7 @@ pub fn blockstore_subcommands(hidden: bool) -> Vec<Command> {
         Command::new("analyze-storage")
             .about(
                 "Output statistics in JSON format about all column families in the ledger rocksdb",
-            )
+            ),
         Command::new("bounds")
             .about(
                 "Print lowest and highest non-empty slots. Note that there may be empty slots \
@@ -576,12 +576,12 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
     let verbose_level = matches.get_count("verbose");
 
     match matches.subcommand() {
-        ("analyze-storage", Some(arg_matches)) => analyze_storage(&crate::open_blockstore(
+        Some(("analyze-storage", arg_matches)) => analyze_storage(&crate::open_blockstore(
             &ledger_path,
             arg_matches,
             AccessType::Secondary,
         ))?,
-        ("bounds", Some(arg_matches)) => {
+        Some(("bounds", arg_matches)) => {
             let output_format = if arg_matches.get_one::<String>("output_format").map(|s| s.as_str()) == Some("json") { OutputFormat::Json } else { OutputFormat::Display };
             let all = arg_matches.get_flag("all");
 
@@ -639,7 +639,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
             // Print collected data
             println!("{}", output_format.formatted_string(&slot_bounds));
         }
-        ("copy", Some(arg_matches)) => {
+        Some(("copy", arg_matches)) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
             let ending_slot = arg_matches.get_one::<String>("ending_slot").unwrap().parse().unwrap();
             let target_ledger =
@@ -663,7 +663,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 }
             }
         }
-        ("dead-slots", Some(arg_matches)) => {
+        Some(("dead-slots", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
@@ -671,7 +671,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 println!("{slot}");
             }
         }
-        ("duplicate-slots", Some(arg_matches)) => {
+        Some(("duplicate-slots", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
@@ -686,7 +686,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 }
             }
         }
-        ("latest-optimistic-slots", Some(arg_matches)) => {
+        Some(("latest-optimistic-slots", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             let num_slots = arg_matches.get_one::<String>("num_slots").unwrap().parse().unwrap();
@@ -716,7 +716,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 );
             }
         }
-        ("list-roots", Some(arg_matches)) => {
+        Some(("list-roots", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
 
@@ -748,7 +748,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 writeln!(output, "{slot}: {blockhash:?}").expect("failed to write");
             }
         }
-        ("parse_full_frozen", Some(arg_matches)) => {
+        Some(("parse_full_frozen", arg_matches)) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
             let ending_slot = arg_matches.get_one::<String>("ending_slot").unwrap().parse().unwrap();
             let blockstore =
@@ -808,7 +808,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 println!("Slot: {slot1}\n, full: {full_log}\n, frozen: {frozen_log}");
             }
         }
-        ("print", Some(arg_matches)) => {
+        Some(("print", arg_matches)) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
             let ending_slot = arg_matches.get_one::<String>("ending_slot")
                 .map(|s| s.parse().unwrap()).unwrap_or(Slot::MAX);
@@ -829,15 +829,15 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 only_rooted,
             )?;
         }
-        ("print-file-metadata", Some(arg_matches)) => {
+        Some(("print-file-metadata", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             let sst_file_name = arg_matches.get_one::<String>("file_name");
             print_blockstore_file_metadata(&blockstore, &sst_file_name)?;
         }
-        ("purge", Some(arg_matches)) => {
+        Some(("purge", arg_matches)) => {
             let start_slot = arg_matches.get_one::<String>("start_slot").unwrap().parse().unwrap();
-            let end_slot = value_t!(arg_matches, "end_slot", Slot).ok();
+            let end_slot = arg_matches.get_one::<String>("end_slot").map(|s| s.parse::<Slot>().unwrap());
             let perform_compaction = arg_matches.get_flag("enable_compaction");
             if arg_matches.get_flag("no_compaction") {
                 warn!("--no-compaction is deprecated and is now the default behavior.");
@@ -912,8 +912,8 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 }
             }
         }
-        ("remove-dead-slot", Some(arg_matches)) => {
-            let slots = values_t_or_exit!(arg_matches, "slots", Slot);
+        Some(("remove-dead-slot", arg_matches)) => {
+            let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let blockstore = crate::open_blockstore(
                 &ledger_path,
                 arg_matches,
@@ -925,7 +925,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                     .map(|_| println!("Slot {slot} not longer marked dead"))?;
             }
         }
-        ("repair-roots", Some(arg_matches)) => {
+        Some(("repair-roots", arg_matches)) => {
             let blockstore = crate::open_blockstore(
                 &ledger_path,
                 arg_matches,
@@ -933,10 +933,10 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
             );
 
             let start_root =
-                value_t!(arg_matches, "start_root", Slot).unwrap_or_else(|_| blockstore.max_root());
+                arg_matches.get_one::<String>("start_root").map(|s| s.parse::<Slot>().unwrap()).unwrap_or_else(|| blockstore.max_root());
             let max_slots = arg_matches.get_one::<String>("max_slots").unwrap().parse().unwrap();
-            let end_root = value_t!(arg_matches, "end_root", Slot)
-                .unwrap_or_else(|_| start_root.saturating_sub(max_slots));
+            let end_root = arg_matches.get_one::<String>("end_root").map(|s| s.parse::<Slot>().unwrap())
+                .unwrap_or_else(|| start_root.saturating_sub(max_slots));
             assert!(start_root > end_root);
             // Adjust by one since start_root need not be checked
             let num_slots = start_root - end_root - 1;
@@ -954,8 +954,8 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
             )?;
             println!("Successfully repaired {num_repaired_roots} roots");
         }
-        ("set-dead-slot", Some(arg_matches)) => {
-            let slots = values_t_or_exit!(arg_matches, "slots", Slot);
+        Some(("set-dead-slot", arg_matches)) => {
+            let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let blockstore = crate::open_blockstore(
                 &ledger_path,
                 arg_matches,
@@ -967,7 +967,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                     .map(|_| println!("Slot {slot} marked dead"))?;
             }
         }
-        ("shred-meta", Some(arg_matches)) => {
+        Some(("shred-meta", arg_matches)) => {
             #[derive(Debug)]
             #[allow(dead_code)]
             struct ShredMeta<'a> {
@@ -981,7 +981,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 shred: &'a Shred,
             }
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap().parse().unwrap();
-            let ending_slot = value_t!(arg_matches, "ending_slot", Slot).unwrap_or(Slot::MAX);
+            let ending_slot = arg_matches.get_one::<String>("ending_slot").map(|s| s.parse::<Slot>().unwrap()).unwrap_or(Slot::MAX);
             let ledger = crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             for (slot, _meta) in ledger
                 .slot_meta_iterator(starting_slot)?
@@ -1007,8 +1007,8 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 }
             }
         }
-        ("slot", Some(arg_matches)) => {
-            let slots = values_t_or_exit!(arg_matches, "slots", Slot);
+        Some(("slot", arg_matches)) => {
+            let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let allow_dead_slots = arg_matches.get_flag("allow_dead_slots");
             let output_format = if arg_matches.get_one::<String>("output_format").map(|s| s.as_str()) == Some("json") { OutputFormat::Json } else { OutputFormat::Display };
 

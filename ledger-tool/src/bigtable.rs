@@ -641,31 +641,18 @@ struct CopyArgs {
 impl CopyArgs {
     pub fn process(arg_matches: &ArgMatches) -> Self {
         CopyArgs {
-            from_slot: value_t!(arg_matches, "starting_slot", Slot).unwrap_or(0),
-            to_slot: value_t!(arg_matches, "ending_slot", Slot).ok(),
+            from_slot: arg_matches.get_one::<String>("starting_slot").map(|s| s.parse::<Slot>().unwrap()).unwrap_or(0),
+            to_slot: arg_matches.get_one::<String>("ending_slot").map(|s| s.parse::<Slot>().unwrap()),
 
-            source_instance_name: value_t_or_exit!(arg_matches, "source_instance_name", String),
-            source_app_profile_id: value_t_or_exit!(arg_matches, "source_app_profile_id", String),
-            source_credential_path: value_t!(arg_matches, "source_credential_path", String).ok(),
-            emulated_source: value_t!(arg_matches, "emulated_source", String).ok(),
+            source_instance_name: arg_matches.get_one::<String>("source_instance_name").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
+            source_app_profile_id: arg_matches.get_one::<String>("source_app_profile_id").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
+            source_credential_path: arg_matches.get_one::<String>("source_credential_path").map(|s| s.parse::<String>().unwrap()),
+            emulated_source: arg_matches.get_one::<String>("emulated_source").map(|s| s.parse::<String>().unwrap()),
 
-            destination_instance_name: value_t_or_exit!(
-                arg_matches,
-                "destination_instance_name",
-                String
-            ),
-            destination_app_profile_id: value_t_or_exit!(
-                arg_matches,
-                "destination_app_profile_id",
-                String
-            ),
-            destination_credential_path: value_t!(
-                arg_matches,
-                "destination_credential_path",
-                String
-            )
-            .ok(),
-            emulated_destination: value_t!(arg_matches, "emulated_destination", String).ok(),
+            destination_instance_name: arg_matches.get_one::<String>("destination_instance_name").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
+            destination_app_profile_id: arg_matches.get_one::<String>("destination_app_profile_id").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap(),
+            destination_credential_path: arg_matches.get_one::<String>("destination_credential_path").map(|s| s.parse::<String>().unwrap()),
+            emulated_destination: arg_matches.get_one::<String>("emulated_destination").map(|s| s.parse::<String>().unwrap()),
 
             force: arg_matches.get_flag("force"),
             dry_run: arg_matches.get_flag("dry_run"),
@@ -1027,7 +1014,7 @@ impl BigTableSubCommand for Command {
                         .arg(
                             Arg::new("reference_credential")
                                 .long("reference-credential")
-                                .short("c")
+                                .short('c')
                                 .value_name("REFERENCE_CREDENTIAL_FILEPATH")
                                 
                                 .required(true)
@@ -1337,10 +1324,10 @@ fn get_global_subcommand_arg<T: FromStr>(
         .map(|v| v != default)
         .unwrap_or(false);
     if on_command {
-        value_t_or_exit!(matches, name, T)
+        matches.get_one::<String>(name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
     } else {
         let sub_matches = sub_matches.as_ref().unwrap();
-        value_t_or_exit!(sub_matches, name, T)
+        sub_matches.get_one::<String>(name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
     }
 }
 
@@ -1350,7 +1337,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
     let verbose = matches.get_flag("verbose");
     let output_format = OutputFormat::from_matches(matches, "output_format", verbose);
 
-    let (subcommand, sub_matches) = matches.subcommand();
+    let Some((subcommand, sub_matches)) = matches.subcommand();
     let instance_name = get_global_subcommand_arg(
         matches,
         sub_matches,
@@ -1366,8 +1353,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
 
     let future = match (subcommand, sub_matches) {
         ("upload", Some(arg_matches)) => {
-            let starting_slot = value_t!(arg_matches, "starting_slot", Slot).ok();
-            let ending_slot = value_t!(arg_matches, "ending_slot", Slot).ok();
+            let starting_slot = arg_matches.get_one::<String>("starting_slot").map(|s| s.parse::<Slot>().unwrap());
+            let ending_slot = arg_matches.get_one::<String>("ending_slot").map(|s| s.parse::<Slot>().unwrap());
             let force_reupload = arg_matches.get_flag("force_reupload");
             let blockstore = crate::open_blockstore(
                 &canonicalize_ledger_path(ledger_path),
@@ -1389,7 +1376,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             ))
         }
         ("delete-slots", Some(arg_matches)) => {
-            let slots = values_t_or_exit!(arg_matches, "slots", Slot);
+            let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: !arg_matches.get_flag("force"),
                 instance_name,
@@ -1408,7 +1395,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             runtime.block_on(first_available_block(config))
         }
         ("block", Some(arg_matches)) => {
-            let slot = value_t_or_exit!(arg_matches, "slot", Slot);
+            let slot = arg_matches.get_one::<String>("slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let show_entries = arg_matches.get_flag("show_entries");
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
@@ -1419,7 +1406,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             runtime.block_on(block(slot, output_format, show_entries, config))
         }
         ("entries", Some(arg_matches)) => {
-            let slot = value_t_or_exit!(arg_matches, "slot", Slot);
+            let slot = arg_matches.get_one::<String>("slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
                 instance_name,
@@ -1429,8 +1416,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             runtime.block_on(entries(slot, output_format, config))
         }
         ("shreds", Some(arg_matches)) => {
-            let starting_slot = value_t_or_exit!(arg_matches, "starting_slot", Slot);
-            let ending_slot = value_t_or_exit!(arg_matches, "ending_slot", Slot);
+            let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
+            let ending_slot = arg_matches.get_one::<String>("ending_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             if starting_slot > ending_slot {
                 eprintln!(
                     "The specified --starting-slot {starting_slot} must be less than or equal to \
@@ -1439,7 +1426,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 exit(1);
             }
             let allow_mock_poh = arg_matches.get_flag("allow_mock_poh");
-            let shred_version = value_t!(arg_matches, "shred_version", u16).ok();
+            let shred_version = arg_matches.get_one::<String>("shred_version").map(|s| s.parse::<u16>().unwrap());
 
             let ledger_path = canonicalize_ledger_path(ledger_path);
             let blockstore = Arc::new(crate::open_blockstore(
@@ -1480,8 +1467,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             ))
         }
         ("blocks", Some(arg_matches)) => {
-            let starting_slot = value_t_or_exit!(arg_matches, "starting_slot", Slot);
-            let limit = value_t_or_exit!(arg_matches, "limit", usize);
+            let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
+            let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
                 instance_name,
@@ -1492,8 +1479,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             runtime.block_on(blocks(starting_slot, limit, config))
         }
         ("compare-blocks", Some(arg_matches)) => {
-            let starting_slot = value_t_or_exit!(arg_matches, "starting_slot", Slot);
-            let limit = value_t_or_exit!(arg_matches, "limit", usize);
+            let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
+            let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
                 instance_name,
@@ -1501,16 +1488,12 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
-            let credential_path = Some(value_t_or_exit!(
-                arg_matches,
-                "reference_credential",
-                String
-            ));
+            let credential_path = Some(arg_matches.get_one::<String>("reference_credential").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap());
 
             let ref_instance_name =
-                value_t_or_exit!(arg_matches, "reference_instance_name", String);
+                arg_matches.get_one::<String>("reference_instance_name").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap();
             let ref_app_profile_id =
-                value_t_or_exit!(arg_matches, "reference_app_profile_id", String);
+                arg_matches.get_one::<String>("reference_app_profile_id").unwrap_or_else(|| std::process::exit(1)).parse::<String>().unwrap();
             let ref_config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
                 credential_type: CredentialType::Filepath(credential_path),
@@ -1538,8 +1521,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
         }
         ("transaction-history", Some(arg_matches)) => {
             let address = pubkey_of(arg_matches, "address").unwrap();
-            let limit = value_t_or_exit!(arg_matches, "limit", usize);
-            let query_chunk_size = value_t_or_exit!(arg_matches, "query_chunk_size", usize);
+            let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
+            let query_chunk_size = arg_matches.get_one::<String>("query_chunk_size").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let before = arg_matches
                 .get_one::<String>("before")
                 .map(|signature| signature.parse().expect("Invalid signature"));

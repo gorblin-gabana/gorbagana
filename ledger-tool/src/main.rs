@@ -167,6 +167,7 @@ impl Default for GraphVoteAccountMode {
     }
 }
 
+#[derive(Debug)]
 struct GraphVoteAccountModeError;
 
 impl FromStr for GraphVoteAccountMode {
@@ -633,7 +634,7 @@ fn setup_slot_recording(
             let mut include_tx = false;
             if let Some(args) = arg_matches.get_many::<String>("record_slots_config") {
                 for arg in args {
-                    match arg {
+                    match arg.as_str() {
                         "tx" => include_tx = true,
                         "accounts" => include_bank_hash_components = true,
                         _ => unreachable!(),
@@ -915,7 +916,8 @@ fn main() {
 
     let mut measure_total_execution_time = Measure::start("ledger tool");
 
-    let matches = ClapCommand::new(crate_name!())
+    let command = ClapCommand::new(crate_name!());
+    let matches = command
         .about(crate_description!())
         .version(solana_version::version!())
         .help_template("\
@@ -1645,22 +1647,22 @@ fn main() {
         Some(("program", arg_matches)) => program(&ledger_path, arg_matches),
         // This match case provides legacy support for commands that were previously top level
         // subcommands of the binary, but have been moved under the blockstore subcommand.
-        Some(Some(("analyze-storage", _)))
-        | Some(Some(("bounds", _)))
-        | Some(Some(("copy", _)))
-        | Some(Some(("dead-slots", _)))
-        | Some(Some(("duplicate-slots", _)))
-        | Some(Some(("latest-optimistic-slots", _)))
-        | Some(Some(("list-roots", _)))
-        | Some(Some(("parse_full_frozen", _)))
-        | Some(Some(("print", _)))
-        | Some(Some(("print-file-metadata", _)))
-        | Some(Some(("purge", _)))
-        | Some(Some(("remove-dead-slot", _)))
-        | Some(Some(("repair-roots", _)))
-        | Some(Some(("set-dead-slot", _)))
-        | Some(Some(("shred-meta", _)))
-        | Some(Some(("slot", _))) => blockstore_process_command(&ledger_path, &matches),
+        Some(("analyze-storage", _))
+        | Some(("bounds", _))
+        | Some(("copy", _))
+        | Some(("dead-slots", _))
+        | Some(("duplicate-slots", _))
+        | Some(("latest-optimistic-slots", _))
+        | Some(("list-roots", _))
+        | Some(("parse_full_frozen", _))
+        | Some(("print", _))
+        | Some(("print-file-metadata", _))
+        | Some(("purge", _))
+        | Some(("remove-dead-slot", _))
+        | Some(("repair-roots", _))
+        | Some(("set-dead-slot", _))
+        | Some(("shred-meta", _))
+        | Some(("slot", _)) => blockstore_process_command(&ledger_path, &matches),
         _ => {
             let ledger_path = canonicalize_ledger_path(&ledger_path);
 
@@ -1761,7 +1763,7 @@ fn main() {
                         )
                     );
                 }
-                Some(Some(("bank-hash", _))) => {
+                Some(("bank-hash", _)) => {
                     eprintln!(
                         "The bank-hash command has been deprecated, use agave-ledger-tool verify \
                          --print-bank-hash ... instead"
@@ -1919,14 +1921,14 @@ fn main() {
 
                     let is_incremental = arg_matches.get_flag("incremental");
                     let is_minimized = arg_matches.get_flag("minimized");
-                    let output_directory = value_t!(arg_matches, "output_directory", PathBuf)
-                        .unwrap_or_else(|_| {
-                            let snapshot_archive_path = value_t!(arg_matches, "snapshots", String)
-                                .ok()
+                    let output_directory = arg_matches.get_one::<String>("output_directory").map(|s| s.parse::<PathBuf>().unwrap())
+                        .unwrap_or_else(|| {
+                            let snapshot_archive_path = arg_matches.get_one::<String>("snapshots")
+                                .map(|s| s.parse::<String>().unwrap())
                                 .map(PathBuf::from);
                             let incremental_snapshot_archive_path =
-                                value_t!(arg_matches, "incremental_snapshot_archive_path", String)
-                                    .ok()
+                                arg_matches.get_one::<String>("incremental_snapshot_archive_path")
+                                    .map(|s| s.parse::<String>().unwrap())
                                     .map(PathBuf::from);
                             match (
                                 is_incremental,
@@ -1942,14 +1944,14 @@ fn main() {
                                 (_, _, _) => ledger_path.clone(),
                             }
                         });
-                    let mut warp_slot = value_t!(arg_matches, "warp_slot", Slot).ok();
+                    let mut warp_slot = arg_matches.get_one::<String>("warp_slot").map(|s| s.parse::<Slot>().unwrap());
                     let remove_stake_accounts = arg_matches.get_flag("remove_stake_accounts");
 
                     let faucet_pubkey = arg_matches.get_one::<String>("faucet_pubkey").and_then(|s| s.parse().ok());
                     let faucet_lamports =
-                        value_t!(arg_matches, "faucet_lamports", u64).unwrap_or(0);
+                        arg_matches.get_one::<String>("faucet_lamports").map(|s| s.parse::<u64>().unwrap()).unwrap_or(0);
 
-                    let rent_burn_percentage = value_t!(arg_matches, "rent_burn_percentage", u8);
+                    let rent_burn_percentage = arg_matches.get_one::<String>("rent_burn_percentage").map(|s| s.parse::<u8>().unwrap());
                     let hashes_per_tick = arg_matches.get_one::<String>("hashes_per_tick");
 
                     let bootstrap_stake_authorized_pubkey =
@@ -2106,7 +2108,7 @@ fn main() {
                         .verify_accounts_hash_in_bg
                         .join_background_thread();
 
-                    let child_bank_required = rent_burn_percentage.is_ok()
+                    let child_bank_required = rent_burn_percentage.is_some()
                         || hashes_per_tick.is_some()
                         || remove_stake_accounts
                         || !accounts_to_remove.is_empty()
@@ -2122,7 +2124,7 @@ fn main() {
                             bank.slot() + 1,
                         );
 
-                        if let Ok(rent_burn_percentage) = rent_burn_percentage {
+                        if let Some(rent_burn_percentage) = rent_burn_percentage {
                             child_bank.set_rent_burn_percentage(rent_burn_percentage);
                         }
 
@@ -2490,7 +2492,7 @@ fn main() {
                     process_options.hash_overrides =
                         Some(banking_trace_events.hash_overrides().clone());
 
-                    let slot = value_t!(arg_matches, "first_simulated_slot", Slot).unwrap();
+                    let slot = arg_matches.get_one::<String>("first_simulated_slot").unwrap().parse::<Slot>().unwrap();
                     let simulator = BankingSimulator::new(banking_trace_events, slot);
                     let Some(parent_slot) = simulator.parent_slot() else {
                         eprintln!(
@@ -2631,11 +2633,11 @@ fn main() {
                     if arg_matches.get_flag("warp_epoch") {
                         let base_bank = bank;
 
-                        let raw_warp_epoch = value_t!(arg_matches, "warp_epoch", String).unwrap();
+                        let raw_warp_epoch = arg_matches.get_one::<String>("warp_epoch").unwrap().parse::<String>().unwrap();
                         let warp_epoch = if raw_warp_epoch.starts_with('+') {
-                            base_bank.epoch() + value_t!(arg_matches, "warp_epoch", Epoch).unwrap()
+                            base_bank.epoch() + arg_matches.get_one::<String>("warp_epoch").unwrap().parse::<Epoch>().unwrap()
                         } else {
-                            value_t!(arg_matches, "warp_epoch", Epoch).unwrap()
+                            arg_matches.get_one::<String>("warp_epoch").unwrap().parse::<Epoch>().unwrap()
                         };
                         if warp_epoch < base_bank.epoch() {
                             eprintln!(
@@ -2646,7 +2648,7 @@ fn main() {
                             exit(1);
                         }
 
-                        if let Ok(raw_inflation) = value_t!(arg_matches, "inflation", String) {
+                        if let Some(raw_inflation) = arg_matches.get_one::<String>("inflation") {
                             let inflation = match raw_inflation.as_str() {
                                 "pico" => Inflation::pico(),
                                 "full" => Inflation::full(),
@@ -3106,7 +3108,7 @@ fn main() {
                             slots = metas.map(|(slot, _)| slot).collect();
                         }
                     } else {
-                        slots = values_t_or_exit!(arg_matches, "slots", Slot);
+                        slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
                     }
                     let allow_dead_slots = arg_matches.get_flag("allow_dead_slots");
 
@@ -3117,7 +3119,7 @@ fn main() {
                     }
                 }
                 Some(("", _)) => {
-                    eprintln!("{}", matches.usage());
+                    eprintln!("{}", command.render_usage());
                     exit(1);
                 }
                 _ => unreachable!(),

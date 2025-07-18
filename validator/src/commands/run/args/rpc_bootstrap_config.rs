@@ -3,7 +3,7 @@ use {
         bootstrap::RpcBootstrapConfig,
         commands::{FromClapArgMatches, Result},
     },
-    clap::{value_t, ArgMatches},
+    clap::{ArgMatches},
 };
 
 #[cfg(test)]
@@ -32,12 +32,13 @@ impl FromClapArgMatches for RpcBootstrapConfig {
 
         let only_known_rpc = matches.get_flag("only_known_rpc");
 
-        let max_genesis_archive_unpacked_size =
-            value_t!(matches, "max_genesis_archive_unpacked_size", u64).map_err(|err| {
-                Box::<dyn std::error::Error>::from(format!(
-                    "failed to parse max_genesis_archive_unpacked_size: {err}"
-                ))
-            })?;
+        let max_genesis_archive_unpacked_size = matches
+            .get_one::<String>("max_genesis_archive_unpacked_size")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or_else(|| {
+                eprintln!("max_genesis_archive_unpacked_size is required");
+                std::process::exit(1);
+            });
 
         let no_incremental_snapshots = matches.get_flag("no_incremental_snapshots");
 

@@ -4,7 +4,7 @@ use {
         cli::{hash_validator, port_range_validator, port_validator, DefaultArgs},
         commands::{FromClapArgMatches, Result},
     },
-    clap::{values_t, Command, Arg, ArgMatches, ArgAction},
+    clap::{Command, Arg, ArgMatches, ArgAction, error::ErrorKind},
     solana_clap_utils::{
         hidden_unless_forced,
         input_parsers::keypair_of,
@@ -51,9 +51,9 @@ impl FromClapArgMatches for RunArgs {
         let identity_keypair = {
             let identity_path = matches
                 .get_one::<String>("identity")
-                .ok_or_else(|| clap::Error::new(clap::ErrorKind::ArgumentNotFound))?;
-            solana_sdk::signer::keypair::read_keypair_file(identity_path)
-                .map_err(|err| clap::Error::new(clap::ErrorKind::InvalidValue))?
+                .ok_or_else(|| clap::Error::new(ErrorKind::InvalidValue))?;
+            solana_keypair::read_keypair_file(identity_path)
+                .map_err(|_err| clap::Error::new(ErrorKind::InvalidValue))?
         };
 
         let logfile = matches
@@ -61,13 +61,16 @@ impl FromClapArgMatches for RunArgs {
             .map(|s| s.into())
             .unwrap_or_else(|| format!("agave-validator-{}.log", identity_keypair.pubkey()));
 
-        let mut entrypoints = values_t!(matches, "entrypoint", String).unwrap_or_default();
+        let mut entrypoints: Vec<String> = matches
+            .get_many::<String>("entrypoint")
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default();
         // sort() + dedup() to yield a vector of unique elements
         entrypoints.sort();
         entrypoints.dedup();
         let entrypoints = entrypoints
             .into_iter()
-            .map(|entrypoint| {
+            .map(|entrypoint: String| {
                 solana_net_utils::parse_host_port(&entrypoint).map_err(|err| {
                     crate::commands::Error::Dynamic(Box::<dyn std::error::Error>::from(format!(
                         "failed to parse entrypoint address: {err}"
@@ -102,7 +105,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("identity")
-            .short("i")
+            .short('i')
             .long("identity")
             .value_name("KEYPAIR")
             
@@ -147,17 +150,17 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("ledger_path")
-            .short("l")
+            .short('l')
             .long("ledger")
             .value_name("DIR")
             
             .required(true)
-            .default_value(default_args.ledger_path.as_str())
+            .default_value((*Box::leak(Box::new(default_args.ledger_path.clone()))).as_str())
             .help("Use DIR as ledger location"),
     )
     .arg(
         Arg::new("entrypoint")
-            .short("n")
+            .short('n')
             .long("entrypoint")
             .value_name("HOST:PORT")
             
@@ -241,7 +244,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("no_port_check")
             .long("no-port-check")
             .action(ArgAction::SetTrue)
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Do not perform TCP/UDP reachable port checks at start-up"),
     )
     .arg(
@@ -285,7 +288,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-max-multiple-accounts")
             .value_name("MAX ACCOUNTS")
             
-            .default_value(default_args.rpc_max_multiple_accounts.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_max_multiple_accounts.clone()))).as_str())
             .help(
                 "Override the default maximum accounts accepted by the getMultipleAccounts \
                  JSON RPC method",
@@ -296,7 +299,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("health-check-slot-distance")
             .value_name("SLOT_DISTANCE")
             
-            .default_value(default_args.health_check_slot_distance.as_str())
+            .default_value((*Box::leak(Box::new(default_args.health_check_slot_distance.clone()))).as_str())
             .help(
                 "Report this validator as healthy if its latest replayed optimistically \
                  confirmed slot is within the specified number of slots from the cluster's \
@@ -369,7 +372,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new(use_snapshot_archives_at_startup::cli::NAME)
             .long(use_snapshot_archives_at_startup::cli::LONG_ARG)
             
-            .possible_values(use_snapshot_archives_at_startup::cli::POSSIBLE_VALUES)
+            .value_parser(clap::value_parser!(String))
             .default_value(use_snapshot_archives_at_startup::cli::default_value())
             .help(use_snapshot_archives_at_startup::cli::HELP)
             .long_help(use_snapshot_archives_at_startup::cli::LONG_HELP),
@@ -415,7 +418,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("HOST")
             
             .value_parser(clap::value_parser!(String))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("DEPRECATED: Use --bind-address instead."),
     )
     .arg(
@@ -446,7 +449,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("tpu-vortexor-receiver-address")
             .value_name("HOST:PORT")
             
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .value_parser(clap::value_parser!(String))
             .help("TPU Vortexor Receiver address to which verified transaction packet will be forwarded."),
     )
@@ -468,7 +471,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("dynamic-port-range")
             .value_name("MIN_PORT-MAX_PORT")
             
-            .default_value(default_args.dynamic_port_range.as_str())
+            .default_value((*Box::leak(Box::new(default_args.dynamic_port_range.clone()))).as_str())
             .value_parser(clap::value_parser!(String))
             .help("Range to use for dynamically assigned ports"),
     )
@@ -477,7 +480,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-local-snapshot-age")
             .value_name("NUMBER_OF_SLOTS")
             
-            .default_value(default_args.maximum_local_snapshot_age.as_str())
+            .default_value((*Box::leak(Box::new(default_args.maximum_local_snapshot_age.clone()))).as_str())
             .help(
                 "Reuse a local snapshot if it's less than this many slots behind the highest \
                  snapshot available for download from other validators",
@@ -502,7 +505,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .alias("incremental-snapshot-interval-slots")
             .value_name("NUMBER")
             
-            .default_value(default_args.incremental_snapshot_archive_interval_slots.as_str())
+            .default_value((*Box::leak(Box::new(default_args.incremental_snapshot_archive_interval_slots.clone()))).as_str())
             .value_parser(clap::value_parser!(u64))
             .help("Number of slots between generating snapshots")
             .long_help(
@@ -517,7 +520,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("full-snapshot-interval-slots")
             .value_name("NUMBER")
             
-            .default_value(default_args.full_snapshot_archive_interval_slots.as_str())
+            .default_value((*Box::leak(Box::new(default_args.full_snapshot_archive_interval_slots.clone()))).as_str())
             .value_parser(clap::value_parser!(u64))
             .help("Number of slots between generating full snapshots")
             .long_help(
@@ -533,7 +536,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .alias("maximum-snapshots-to-retain")
             .value_name("NUMBER")
             
-            .default_value(default_args.maximum_full_snapshot_archives_to_retain.as_str())
+            .default_value((*Box::leak(Box::new(default_args.maximum_full_snapshot_archives_to_retain.clone()))).as_str())
             .value_parser(clap::value_parser!(usize))
             .help(
                 "The maximum number of full snapshot archives to hold on to when purging \
@@ -545,7 +548,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-incremental-snapshots-to-retain")
             .value_name("NUMBER")
             
-            .default_value(default_args.maximum_incremental_snapshot_archives_to_retain.as_str())
+            .default_value((*Box::leak(Box::new(default_args.maximum_incremental_snapshot_archives_to_retain.clone()))).as_str())
             .value_parser(clap::value_parser!(usize))
             .help(
                 "The maximum number of incremental snapshot archives to hold on to when \
@@ -558,7 +561,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ADJUSTMENT")
             
             .value_parser(clap::value_parser!(i8))
-            .default_value(default_args.snapshot_packager_niceness_adjustment.as_str())
+            .default_value((*Box::leak(Box::new(default_args.snapshot_packager_niceness_adjustment.clone()))).as_str())
             .help(
                 "Add this value to niceness of snapshot packager thread. Negative value \
                  increases priority, positive value decreases priority.",
@@ -569,7 +572,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("minimal-snapshot-download-speed")
             .value_name("MINIMAL_SNAPSHOT_DOWNLOAD_SPEED")
             
-            .default_value(default_args.min_snapshot_download_speed.as_str())
+            .default_value((*Box::leak(Box::new(default_args.min_snapshot_download_speed.clone()))).as_str())
             .help(
                 "The minimal speed of snapshot downloads measured in bytes/second. If the \
                  initial download speed falls below this threshold, the system will retry the \
@@ -581,7 +584,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-snapshot-download-abort")
             .value_name("MAXIMUM_SNAPSHOT_DOWNLOAD_ABORT")
             
-            .default_value(default_args.max_snapshot_download_abort.as_str())
+            .default_value((*Box::leak(Box::new(default_args.max_snapshot_download_abort.clone()))).as_str())
             .help(
                 "The maximum number of times to abort and retry when encountering a slow \
                  snapshot download.",
@@ -592,43 +595,43 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("contact-debug-interval")
             .value_name("CONTACT_DEBUG_INTERVAL")
             
-            .default_value(default_args.contact_debug_interval.as_str())
+            .default_value((*Box::leak(Box::new(default_args.contact_debug_interval.clone()))).as_str())
             .help("Milliseconds between printing contact debug from gossip."),
     )
     .arg(
         Arg::new("no_poh_speed_test")
             .long("no-poh-speed-test")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Skip the check for PoH speed."),
     )
     .arg(
         Arg::new("no_os_network_limits_test")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("no-os-network-limits-test")
             .help("Skip checks for OS network limits."),
     )
     .arg(
         Arg::new("no_os_memory_stats_reporting")
             .long("no-os-memory-stats-reporting")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Disable reporting of OS memory statistics."),
     )
     .arg(
         Arg::new("no_os_network_stats_reporting")
             .long("no-os-network-stats-reporting")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Disable reporting of OS network statistics."),
     )
     .arg(
         Arg::new("no_os_cpu_stats_reporting")
             .long("no-os-cpu-stats-reporting")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Disable reporting of OS CPU statistics."),
     )
     .arg(
         Arg::new("no_os_disk_stats_reporting")
             .long("no-os-disk-stats-reporting")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Disable reporting of OS disk statistics."),
     )
     .arg(
@@ -637,7 +640,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("SNAPSHOT_VERSION")
             .value_parser(clap::value_parser!(String))
             
-            .default_value(default_args.snapshot_version.into())
+            .default_value((*Box::leak(Box::new(default_args.snapshot_version.clone()))).as_str())
             .help("Output snapshot version"),
     )
     .arg(
@@ -645,8 +648,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("limit-ledger-size")
             .value_name("SHRED_COUNT")
             
-            .min_values(0)
-            .max_values(1)
+            .num_args(0..)
+            
             /* .default_value() intentionally not used here! */
             .help("Keep this amount of shreds in root slots."),
     )
@@ -655,8 +658,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rocksdb-shred-compaction")
             .value_name("ROCKSDB_COMPACTION_STYLE")
             
-            .possible_values(&["level"])
-            .default_value(default_args.rocksdb_shred_compaction.as_str())
+            .value_parser(["level"])
+            .default_value((*Box::leak(Box::new(default_args.rocksdb_shred_compaction.clone()))).as_str())
             .help(
                 "Controls how RocksDB compacts shreds. *WARNING*: You will lose your \
                  Blockstore data when you switch between options. Possible values are: \
@@ -665,12 +668,12 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("rocksdb_ledger_compression")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("rocksdb-ledger-compression")
             .value_name("COMPRESSION_TYPE")
             
-            .possible_values(&["none", "lz4", "snappy", "zlib"])
-            .default_value(default_args.rocksdb_ledger_compression.as_str())
+            .value_parser(["none", "lz4", "snappy", "zlib"])
+            .default_value((*Box::leak(Box::new(default_args.rocksdb_ledger_compression.clone()))).as_str())
             .help(
                 "The compression algorithm that is used to compress transaction status data. \
                  Turning on compression can save ~10% of the ledger size.",
@@ -678,12 +681,12 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("rocksdb_perf_sample_interval")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("rocksdb-perf-sample-interval")
             .value_name("ROCKS_PERF_SAMPLE_INTERVAL")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rocksdb_perf_sample_interval.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rocksdb_perf_sample_interval.clone()))).as_str())
             .help(
                 "Controls how often RocksDB read/write performance samples are collected. \
                  Perf samples are collected in 1 / ROCKS_PERF_SAMPLE_INTERVAL sampling rate.",
@@ -733,7 +736,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("logfile")
-            .short("o")
+            .short('o')
             .long("log")
             .value_name("FILE")
             
@@ -756,7 +759,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("no_wait_for_vote_to_start_leader")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("no-wait-for-vote-to-start-leader")
             .help(
                 "If the validator starts up with no ledger, it will wait to start block \
@@ -818,7 +821,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("repair_whitelist")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("repair-whitelist")
             .value_parser(clap::value_parser!(String))
             .value_name("VALIDATOR IDENTITY")
@@ -854,21 +857,21 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_disable_quic")
             .long("tpu-disable-quic")
             .action(ArgAction::SetTrue)
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("DEPRECATED (UDP support will be dropped): Do not use QUIC to send transactions."),
     )
     .arg(
         Arg::new("tpu_enable_udp")
             .long("tpu-enable-udp")
             .action(ArgAction::SetTrue)
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("DEPRECATED (UDP support will be dropped): Enable UDP for receiving/sending transactions."),
     )
     .arg(
         Arg::new("tpu_connection_pool_size")
             .long("tpu-connection-pool-size")
             
-            .default_value(default_args.tpu_connection_pool_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_connection_pool_size.clone()))).as_str())
             .value_parser(clap::value_parser!(usize))
             .help("Controls the TPU connection pool size per remote address"),
     )
@@ -876,80 +879,80 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_connections_per_ipaddr_per_minute")
             .long("tpu-max-connections-per-ipaddr-per-minute")
             
-            .default_value(default_args.tpu_max_connections_per_ipaddr_per_minute.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_connections_per_ipaddr_per_minute.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the rate of the clients connections per IpAddr per minute."),
     )
     .arg(
         Arg::new("vote_use_quic")
             .long("vote-use-quic")
             
-            .default_value(default_args.vote_use_quic.as_str())
-            .hidden(hidden_unless_forced())
+            .default_value((*Box::leak(Box::new(default_args.vote_use_quic.clone()))).as_str())
+            .hide(hidden_unless_forced())
             .help("Controls if to use QUIC to send votes."),
     )
     .arg(
         Arg::new("tpu_max_connections_per_peer")
             .long("tpu-max-connections-per-peer")
             
-            .default_value(default_args.tpu_max_connections_per_peer.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_connections_per_peer.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max concurrent connections per IpAddr."),
     )
     .arg(
         Arg::new("tpu_max_staked_connections")
             .long("tpu-max-staked-connections")
             
-            .default_value(default_args.tpu_max_staked_connections.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_staked_connections.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU from staked nodes."),
     )
     .arg(
         Arg::new("tpu_max_unstaked_connections")
             .long("tpu-max-unstaked-connections")
             
-            .default_value(default_args.tpu_max_unstaked_connections.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_unstaked_connections.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max concurrent connections fort TPU from unstaked nodes."),
     )
     .arg(
         Arg::new("tpu_max_fwd_staked_connections")
             .long("tpu-max-fwd-staked-connections")
             
-            .default_value(default_args.tpu_max_fwd_staked_connections.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_fwd_staked_connections.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU-forward from staked nodes."),
     )
     .arg(
         Arg::new("tpu_max_fwd_unstaked_connections")
             .long("tpu-max-fwd-unstaked-connections")
             
-            .default_value(default_args.tpu_max_fwd_unstaked_connections.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_fwd_unstaked_connections.clone()))).as_str())
             .value_parser(clap::value_parser!(u32))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU-forward from unstaked nodes."),
     )
     .arg(
         Arg::new("tpu_max_streams_per_ms")
             .long("tpu-max-streams-per-ms")
             
-            .default_value(default_args.tpu_max_streams_per_ms.as_str())
+            .default_value((*Box::leak(Box::new(default_args.tpu_max_streams_per_ms.clone()))).as_str())
             .value_parser(clap::value_parser!(usize))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Controls the max number of streams for a TPU service."),
     )
     .arg(
         Arg::new("num_quic_endpoints")
             .long("num-quic-endpoints")
             
-            .default_value(default_args.num_quic_endpoints.as_str())
+            .default_value((*Box::leak(Box::new(default_args.num_quic_endpoints.clone()))).as_str())
             .value_parser(clap::value_parser!(usize))
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to \
                    increase network ingest throughput, at the expense of higher CPU and general \
                    validator load."),
@@ -973,7 +976,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("HOST")
             
             .value_parser(clap::value_parser!(String))
-            .default_value(default_args.bind_address.as_str())
+            .default_value((*Box::leak(Box::new(default_args.bind_address.clone()))).as_str())
             .action(ArgAction::Append)
             .help("Repeatable. IP addresses to bind the validator ports on. First is primary (used on startup), the rest may be switched to during operation."),
         )
@@ -994,7 +997,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(default_args.rpc_threads.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_threads.clone()))).as_str())
             .help("Number of threads to use for servicing RPC requests"),
     )
     .arg(
@@ -1003,7 +1006,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(default_args.rpc_blocking_threads.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_blocking_threads.clone()))).as_str())
             .help("Number of blocking threads to use for servicing CPU bound RPC requests (eg getMultipleAccounts)"),
     )
     .arg(
@@ -1012,7 +1015,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ADJUSTMENT")
             
             .value_parser(clap::value_parser!(i8))
-            .default_value(default_args.rpc_niceness_adjustment.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_niceness_adjustment.clone()))).as_str())
             .help(
                 "Add this value to niceness of RPC threads. Negative value increases \
                  priority, positive value decreases priority.",
@@ -1024,7 +1027,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("SECONDS")
             .value_parser(clap::value_parser!(u64))
             
-            .default_value(default_args.rpc_bigtable_timeout.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_bigtable_timeout.clone()))).as_str())
             .help("Number of seconds before timing out RPC requests backed by BigTable"),
     )
     .arg(
@@ -1032,7 +1035,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-bigtable-instance-name")
             
             .value_name("INSTANCE_NAME")
-            .default_value(default_args.rpc_bigtable_instance_name.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_bigtable_instance_name.clone()))).as_str())
             .help("Name of the Bigtable instance to upload to"),
     )
     .arg(
@@ -1040,7 +1043,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-bigtable-app-profile-id")
             
             .value_name("APP_PROFILE_ID")
-            .default_value(default_args.rpc_bigtable_app_profile_id.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_bigtable_app_profile_id.clone()))).as_str())
             .help("Bigtable application profile id to use in requests"),
     )
     .arg(
@@ -1049,7 +1052,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("BYTES")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(default_args.rpc_bigtable_max_message_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_bigtable_max_message_size.clone()))).as_str())
             .help("Max encoding and decoding message size used in Bigtable Grpc client"),
     )
     .arg(
@@ -1058,7 +1061,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_pubsub_worker_threads.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_pubsub_worker_threads.clone()))).as_str())
             .help("PubSub worker threads"),
     )
     .arg(
@@ -1080,7 +1083,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_pubsub_max_active_subscriptions.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_pubsub_max_active_subscriptions.clone()))).as_str())
             .help(
                 "The maximum number of active subscriptions that RPC PubSub will accept \
                  across all connections.",
@@ -1092,7 +1095,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_pubsub_queue_capacity_items.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_pubsub_queue_capacity_items.clone()))).as_str())
             .help(
                 "The maximum number of notifications that RPC PubSub will store across all \
                  connections.",
@@ -1104,7 +1107,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("BYTES")
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_pubsub_queue_capacity_bytes.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_pubsub_queue_capacity_bytes.clone()))).as_str())
             .help(
                 "The maximum total size of notifications that RPC PubSub will store across \
                  all connections.",
@@ -1119,8 +1122,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_parser(clap::value_parser!(usize))
             .default_value_if(
                 "full_rpc_api",
-                None,
-                &default_args.rpc_pubsub_notification_threads,
+                "true",
+                Box::leak(Box::new(default_args.rpc_pubsub_notification_threads.clone())).as_str(),
             )
             .help(
                 "The maximum number of threads that RPC PubSub will use for generating \
@@ -1133,17 +1136,17 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("MILLISECS")
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(default_args.rpc_send_transaction_retry_ms.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_retry_ms.clone()))).as_str())
             .help("The rate at which transactions sent via rpc service are retried."),
     )
     .arg(
         Arg::new("rpc_send_transaction_batch_ms")
             .long("rpc-send-batch-ms")
             .value_name("MILLISECS")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(default_args.rpc_send_transaction_batch_ms.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_batch_ms.clone()))).as_str())
             .help("The rate at which transactions sent via rpc service are sent in batch."),
     )
     .arg(
@@ -1152,7 +1155,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(default_args.rpc_send_transaction_leader_forward_count.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_leader_forward_count.clone()))).as_str())
             .help(
                 "The number of upcoming leaders to which to forward transactions sent via rpc \
                  service.",
@@ -1175,7 +1178,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_send_transaction_service_max_retries.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_service_max_retries.clone()))).as_str())
             .help(
                 "The maximum number of transaction broadcast retries, regardless of requested \
                  value.",
@@ -1185,10 +1188,10 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("rpc_send_transaction_batch_size")
             .long("rpc-send-batch-size")
             .value_name("NUMBER")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_send_transaction_batch_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_batch_size.clone()))).as_str())
             .help("The size of transactions to be sent in batch."),
     )
     .arg(
@@ -1197,7 +1200,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_send_transaction_retry_pool_max_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_send_transaction_retry_pool_max_size.clone()))).as_str())
             .help("The maximum size of transactions retry pool."),
     )
     .arg(
@@ -1229,7 +1232,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("BYTES")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(default_args.rpc_max_request_body_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.rpc_max_request_body_size.clone()))).as_str())
             .help("The maximum request body size accepted by rpc service"),
     )
     .arg(
@@ -1252,8 +1255,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("snapshot_archive_format")
             .long("snapshot-archive-format")
             .alias("snapshot-compression") // Legacy name used by Solana v1.5.x and older
-            .possible_values(SUPPORTED_ARCHIVE_COMPRESSION)
-            .default_value(default_args.snapshot_archive_format.as_str())
+            .value_parser(clap::value_parser!(String))
+            .default_value((*Box::leak(Box::new(default_args.snapshot_archive_format.clone()))).as_str())
             .value_name("ARCHIVE_TYPE")
             
             .help("Snapshot archive format to use."),
@@ -1261,7 +1264,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     .arg(
         Arg::new("snapshot_zstd_compression_level")
             .long("snapshot-zstd-compression-level")
-            .default_value(default_args.snapshot_zstd_compression_level.as_str())
+            .default_value((*Box::leak(Box::new(default_args.snapshot_zstd_compression_level.clone()))).as_str())
             .value_name("LEVEL")
             
             .help("The compression level to use when archiving with zstd")
@@ -1277,7 +1280,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("max-genesis-archive-unpacked-size")
             .value_name("NUMBER")
             
-            .default_value(default_args.genesis_archive_unpacked_size.as_str())
+            .default_value((*Box::leak(Box::new(default_args.genesis_archive_unpacked_size.clone()))).as_str())
             .help("maximum total uncompressed file size of downloaded genesis archive"),
     )
     .arg(
@@ -1285,7 +1288,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("wal-recovery-mode")
             .value_name("MODE")
             
-            .possible_values(&[
+            .value_parser([
                 "tolerate_corrupted_tail_records",
                 "absolute_consistency",
                 "point_in_time",
@@ -1295,7 +1298,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("poh_pinned_cpu_core")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("experimental-poh-pinned-cpu-core")
             .value_name("CPU_CORE_INDEX")
             .value_parser(clap::value_parser!(usize))
@@ -1303,7 +1306,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("poh_hashes_per_batch")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("poh-hashes-per-batch")
             
             .value_name("NUM")
@@ -1312,7 +1315,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     .arg(
         Arg::new("process_ledger_before_services")
             .long("process-ledger-before-services")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .help("Process the local ledger fully before starting networking services"),
     )
     .arg(
@@ -1320,7 +1323,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("account-index")
             
             .action(ArgAction::Append)
-            .possible_values(&["program-id", "spl-token-owner", "spl-token-mint"])
+            .value_parser(["program-id", "spl-token-owner", "spl-token-mint"])
             .value_name("INDEX")
             .help("Enable an accounts index, indexed by the selected account field"),
     )
@@ -1353,13 +1356,13 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
                 "Debug option to scan all append vecs and verify account index refcounts \
                  prior to clean",
             )
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_scan_filter_for_shrinking")
             .long("accounts-db-scan-filter-for-shrinking")
             
-            .possible_values(&["all", "only-abnormal", "only-abnormal-with-verify"])
+            .value_parser(["all", "only-abnormal", "only-abnormal-with-verify"])
             .help(
                 "Debug option to use different type of filtering for accounts index scan in \
                 shrinking. \"all\" will scan both in-memory and on-disk accounts index, which is the default. \
@@ -1369,20 +1372,20 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
                 \"only-abnormal\", which will scan in-memory index for abnormal entries, but will also \
                 verify that on-disk account entries are indeed normal.",
             )
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("no_skip_initial_accounts_db_clean")
             .long("no-skip-initial-accounts-db-clean")
             .help("Do not skip the initial cleaning of accounts when verifying snapshot bank")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_access_storages_method")
             .long("accounts-db-access-storages-method")
             .value_name("METHOD")
             
-            .possible_values(&["mmap", "file"])
+            .value_parser(["mmap", "file"])
             .help("Access account storages using this method")
     )
     .arg(
@@ -1395,7 +1398,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
                 "AppendVecs that are older than (slots_per_epoch - SLOT-OFFSET) are squashed \
                  together.",
             )
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_ancient_storage_ideal_size")
@@ -1404,7 +1407,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_parser(clap::value_parser!(u64))
             
             .help("The smallest size of ideal ancient storage.")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_max_ancient_storages")
@@ -1413,7 +1416,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_parser(clap::value_parser!(usize))
             
             .help("The number of ancient storages the ancient slot combining should converge to.")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_hash_calculation_pubkey_bins")
@@ -1422,7 +1425,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_parser(clap::value_parser!(usize))
             
             .help("The number of pubkey bins used for accounts hash calculation.")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_cache_limit_mb")
@@ -1440,10 +1443,9 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("accounts-db-read-cache-limit-mb")
             .value_name("MAX | LOW,HIGH")
             
-            .min_values(1)
-            .max_values(2)
-            .multiple(false)
-            .require_delimiter(true)
+            .num_args(1..=2)
+            
+            .value_delimiter(',')
             .help("How large the read cache for account data can become, in mebibytes")
             .long_help(
                 "How large the read cache for account data can become, in mebibytes. \
@@ -1452,13 +1454,13 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
                  for the cache. When the cache exceeds the high watermark, entries will \
                  be evicted until the size reaches the low watermark."
             )
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_db_snapshots_use_experimental_accumulator_hash")
             .long("accounts-db-snapshots-use-experimental-accumulator-hash")
             .help("Snapshots use the experimental accumulator hash")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("accounts_index_scan_results_limit_mb")
@@ -1496,7 +1498,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("accounts-shrink-optimize-total-space")
             
             .value_name("BOOLEAN")
-            .default_value(default_args.accounts_shrink_optimize_total_space.as_str())
+            .default_value((*Box::leak(Box::new(default_args.accounts_shrink_optimize_total_space.clone()))).as_str())
             .help(
                 "When this is set to true, the system will shrink the most sparse accounts \
                  and when the overall shrink ratio is above the specified \
@@ -1509,7 +1511,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("accounts-shrink-ratio")
             
             .value_name("RATIO")
-            .default_value(default_args.accounts_shrink_ratio.as_str())
+            .default_value((*Box::leak(Box::new(default_args.accounts_shrink_ratio.clone()))).as_str())
             .help(
                 "Specifies the shrink ratio for the accounts to be shrunk. The shrink ratio \
                  is defined as the ratio of the bytes alive over the  total bytes used. If \
@@ -1522,7 +1524,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("allow-private-addr")
             .action(ArgAction::SetTrue)
             .help("Allow contacting private ip addresses")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     )
     .arg(
         Arg::new("log_messages_bytes_limit")
@@ -1545,7 +1547,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             // default doesn't enable banking tracer unless this flag is
             // explicitly given, similar to --limit-ledger-size.
             // see configure_banking_trace_dir_byte_limit() for this.
-            .default_value(default_args.banking_trace_dir_byte_limit.as_str())
+            .default_value((*Box::leak(Box::new(default_args.banking_trace_dir_byte_limit.clone()))).as_str())
             .help(
                 "Enables the banking trace explicitly, which is enabled by default and writes \
                  trace files for simulate-leader-blocks, retaining up to the default or \
@@ -1562,7 +1564,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("delay_leader_block_for_pending_fork")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("delay-leader-block-for-pending-fork")
             .action(ArgAction::SetTrue)
             .help(
@@ -1579,8 +1581,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("block-verification-method")
             .value_name("METHOD")
             
-            .possible_values(BlockVerificationMethod::cli_names())
-            .default_value(BlockVerificationMethod::default().into())
+            .value_parser(clap::value_parser!(String))
+            .default_value(Box::leak(Box::new(BlockVerificationMethod::default().to_string())).as_str())
             .help(BlockVerificationMethod::cli_message()),
     )
     .arg(
@@ -1588,8 +1590,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("block-production-method")
             .value_name("METHOD")
             
-            .possible_values(BlockProductionMethod::cli_names())
-            .default_value(BlockProductionMethod::default().into())
+            .value_parser(clap::value_parser!(String))
+            .default_value(Box::leak(Box::new(BlockProductionMethod::default().to_string())).as_str())
             .help(BlockProductionMethod::cli_message()),
     )
     .arg(
@@ -1597,8 +1599,8 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("transaction-structure")
             .value_name("STRUCT")
             
-            .possible_values(TransactionStructure::cli_names())
-            .default_value(TransactionStructure::default().into())
+            .value_parser(clap::value_parser!(String))
+            .default_value(Box::leak(Box::new(TransactionStructure::default().to_string())).as_str())
             .help(TransactionStructure::cli_message()),
     )
     .arg(
@@ -1612,7 +1614,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     .arg(
         Arg::new("wen_restart")
             .long("wen-restart")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .value_name("FILE")
             
             .required(false)
@@ -1645,7 +1647,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     .arg(
         Arg::new("wen_restart_coordinator")
             .long("wen-restart-coordinator")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .value_name("PUBKEY")
             
             .required(false)
@@ -1657,7 +1659,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("retransmit_xdp_interface")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("experimental-retransmit-xdp-interface")
             
             .value_name("INTERFACE")
@@ -1666,7 +1668,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     )
     .arg(
         Arg::new("retransmit_xdp_cpu_cores")
-            .hidden(hidden_unless_forced())
+            .hide(hidden_unless_forced())
             .long("experimental-retransmit-xdp-cpu-cores")
             
             .value_name("CPU_LIST")
@@ -1694,14 +1696,15 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
 
 fn validators_set(
     identity_pubkey: &Pubkey,
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     matches_name: &str,
     arg_name: &str,
 ) -> Result<Option<HashSet<Pubkey>>> {
     if matches.get_flag(matches_name) {
-        let validators_set: Option<HashSet<Pubkey>> = values_t!(matches, matches_name, Pubkey)
-            .ok()
-            .map(|validators| validators.into_iter().collect());
+        let validators_set: Option<HashSet<Pubkey>> = matches
+            .get_many::<String>(matches_name)
+            .map(|values| values.map(|s| Pubkey::from_str(s).expect("invalid pubkey")).collect())
+            .map(|validators: Vec<Pubkey>| validators.into_iter().collect());
         if let Some(validators_set) = &validators_set {
             if validators_set.contains(identity_pubkey) {
                 return Err(crate::commands::Error::Dynamic(
