@@ -2,7 +2,7 @@
 use {
     agave_banking_stage_ingress_types::BankingPacketBatch,
     assert_matches::assert_matches,
-    clap::{crate_description, crate_name, Arg, ArgEnum, Command},
+    clap::{crate_description, crate_name, Arg, Command, ValueEnum},
     crossbeam_channel::{unbounded, Receiver},
     log::*,
     rand::{thread_rng, Rng},
@@ -80,7 +80,7 @@ fn check_txs(
     no_bank
 }
 
-#[derive(ArgEnum, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum WriteLockContention {
     /// No transactions lock the same accounts.
     None,
@@ -239,80 +239,69 @@ fn main() {
         .arg(
             Arg::new("iterations")
                 .long("iterations")
-                .takes_value(true)
                 .help("Number of test iterations"),
         )
         .arg(
             Arg::new("num_chunks")
                 .long("num-chunks")
-                .takes_value(true)
                 .value_name("SIZE")
                 .help("Number of transaction chunks."),
         )
         .arg(
             Arg::new("packets_per_batch")
                 .long("packets-per-batch")
-                .takes_value(true)
                 .value_name("SIZE")
                 .help("Packets per batch"),
         )
         .arg(
             Arg::new("skip_sanity")
                 .long("skip-sanity")
-                .takes_value(false)
                 .help("Skip transaction sanity execution"),
         )
         .arg(
             Arg::new("trace_banking")
                 .long("trace-banking")
-                .takes_value(false)
                 .help("Enable banking tracing"),
         )
         .arg(
             Arg::new("write_lock_contention")
                 .long("write-lock-contention")
-                .takes_value(true)
-                .possible_values(WriteLockContention::possible_values())
+                .value_name("METHOD")
+                .value_parser(clap::value_parser!(WriteLockContention))
                 .help("Accounts that test transactions write lock"),
         )
         .arg(
             Arg::new("batches_per_iteration")
                 .long("batches-per-iteration")
-                .takes_value(true)
                 .help("Number of batches to send in each iteration"),
         )
         .arg(
-            Arg::with_name("block_production_method")
+            Arg::new("block_production_method")
                 .long("block-production-method")
                 .value_name("METHOD")
-                .takes_value(true)
                 .possible_values(BlockProductionMethod::cli_names())
                 .help(BlockProductionMethod::cli_message()),
         )
         .arg(
-            Arg::with_name("transaction_struct")
+            Arg::new("transaction_struct")
                 .long("transaction-structure")
                 .value_name("STRUCT")
-                .takes_value(true)
                 .possible_values(TransactionStructure::cli_names())
                 .help(TransactionStructure::cli_message()),
         )
         .arg(
             Arg::new("num_banking_threads")
                 .long("num-banking-threads")
-                .takes_value(true)
                 .help("Number of threads to use in the banking stage"),
         )
         .arg(
             Arg::new("simulate_mint")
                 .long("simulate-mint")
-                .takes_value(false)
                 .help("Simulate mint transactions to have higher priority"),
         )
         .arg(
             Arg::new("mint_txs_percentage")
                 .long("mint-txs-percentage")
-                .takes_value(true)
                 .requires("simulate_mint")
                 .help("In simulating mint, number of mint transactions out of 100."),
         )

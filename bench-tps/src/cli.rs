@@ -1,5 +1,5 @@
 use {
-    clap::{crate_description, crate_name, value_t_or_exit, App, Arg, ArgMatches},
+    clap::{crate_description, crate_name, Command, Arg, ArgMatches},
     solana_clap_utils::{
         hidden_unless_forced,
         input_validators::{is_keypair, is_url, is_url_or_moniker, is_within_range},
@@ -120,8 +120,8 @@ impl Default for Config {
 }
 
 /// Defines and builds the CLI args for a run of the benchmark
-pub fn build_args<'a>(version: &'_ str) -> App<'a, '_> {
-    App::new(crate_name!()).about(crate_description!())
+pub fn build_args<'a>(version: &'_ str) -> Command<'a, '_> {
+    Command::new(crate_name!()).about(crate_description!())
         .version(version)
         .arg({
             let arg = Arg::new("config_file")
@@ -132,7 +132,7 @@ pub fn build_args<'a>(version: &'_ str) -> App<'a, '_> {
                 .global(true)
                 .help("Configuration file to use");
             if let Some(ref config_file) = *CONFIG_FILE {
-                arg.default_value(config_file)
+                arg.default_value(config_file.as_str())
             } else {
                 arg
             }
@@ -431,7 +431,7 @@ pub fn build_args<'a>(version: &'_ str) -> App<'a, '_> {
             Arg::new("commitment_config")
                 .long("commitment-config")
                 
-                .value_parser(&["processed", "confirmed", "finalized"])
+                .value_parser(["processed", "confirmed", "finalized"])
                 .default_value("confirmed")
                 .help("Block commitment config for getting latest blockhash"),
         )
@@ -463,15 +463,15 @@ pub fn parse_args(matches: &ArgMatches) -> Result<Config, &'static str> {
         solana_cli_config::Config::default()
     };
     let (_, json_rpc_url) = ConfigInput::compute_json_rpc_url_setting(
-        matches.get_one::<String>("json_rpc_url").unwrap_or(""),
+        matches.get_one::<String>("json_rpc_url").map_or("", |v| v),
         &config.json_rpc_url,
     );
     args.json_rpc_url = json_rpc_url;
 
     let (_, websocket_url) = ConfigInput::compute_websocket_url_setting(
-        matches.get_one::<String>("websocket_url").unwrap_or(""),
+        matches.get_one::<String>("websocket_url").map_or("", |v| v),
         &config.websocket_url,
-        matches.get_one::<String>("json_rpc_url").unwrap_or(""),
+        matches.get_one::<String>("json_rpc_url").map_or("", |v| v),
         &config.json_rpc_url,
     );
     args.websocket_url = websocket_url;
@@ -484,7 +484,7 @@ pub fn parse_args(matches: &ArgMatches) -> Result<Config, &'static str> {
         matches
             .get_one::<String>("authority")
             .or(matches.get_one::<String>("identity"))
-            .unwrap_or(""),
+            .map_or("", |v| v),
         &config.keypair_path,
     );
     if let Ok(id) = read_keypair_file(id_path) {
@@ -626,7 +626,12 @@ pub fn parse_args(matches: &ArgMatches) -> Result<Config, &'static str> {
         args.client_node_id = Some(client_node_id);
     }
 
-    args.commitment_config = value_t_or_exit!(matches, "commitment_config", CommitmentConfig);
+    args.commitment_config = match matches.get_one::<String>("commitment_config").map(|s| s.as_str()) {
+        Some("processed") => CommitmentConfig::processed(),
+        Some("confirmed") => CommitmentConfig::confirmed(), 
+        Some("finalized") => CommitmentConfig::finalized(),
+        _ => CommitmentConfig::confirmed(),
+    };
     args.block_data_file = matches.get_one::<String>("block_data_file").map(|s| s.to_string());
     args.transaction_data_file = matches
         .get_one::<String>("transaction_data_file")

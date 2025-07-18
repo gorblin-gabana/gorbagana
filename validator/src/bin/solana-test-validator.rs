@@ -1,9 +1,9 @@
 use {
-    agave_validator::{
-        admin_rpc_service, cli, dashboard::Dashboard, ledger_lockfile, lock_ledger,
-        println_name_value,
+    gorb_validator::{
+        admin_rpc_service, cli, ledger_cleanup_service, tpu_client_next, validator_config,
     },
-    clap::{crate_name, value_t, value_t_or_exit, values_t_or_exit},
+    clap::crate_name,
+    // Remove value_t, value_t_or_exit, values_t_or_exit - these don't exist in clap v4
     crossbeam_channel::unbounded,
     itertools::Itertools,
     log::*,
@@ -63,7 +63,7 @@ fn main() {
         Output::Dashboard
     };
 
-    let ledger_path = value_t_or_exit!(matches, "ledger_path", PathBuf);
+    let ledger_path = matches.get_one::<String>("ledger_path").unwrap().parse::<PathBuf>().unwrap();
     let reset_ledger = matches.get_flag("reset");
 
     let indexes: HashSet<AccountIndex> = matches
@@ -154,10 +154,10 @@ fn main() {
                 .unwrap_or_else(|_| (Keypair::new().pubkey(), true))
         });
 
-    let rpc_port = matches.get_one::<String>("rpc_port").unwrap_or_else(|| std::process::exit(1)).parse::<u16>().unwrap();
+    let rpc_port = matches.get_one::<String>("rpc_port").unwrap().parse::<u16>().unwrap();
     let enable_vote_subscription = matches.get_flag("rpc_pubsub_enable_vote_subscription");
     let enable_block_subscription = matches.get_flag("rpc_pubsub_enable_block_subscription");
-    let faucet_port = matches.get_one::<String>("faucet_port").unwrap_or_else(|| std::process::exit(1)).parse::<u16>().unwrap();
+    let faucet_port = matches.get_one::<String>("faucet_port").unwrap().parse::<u16>().unwrap();
     let ticks_per_slot = matches.get_one::<String>("ticks_per_slot").map(|s| s.parse::<u64>().unwrap());
     let slots_per_epoch = matches.get_one::<String>("slots_per_epoch").map(|s| s.parse::<Slot>().unwrap());
     let inflation_fixed = matches.get_one::<String>("inflation_fixed").map(|s| s.parse::<f64>().unwrap());
@@ -305,7 +305,7 @@ fn main() {
 
     let warp_slot = if matches.get_flag("warp_slot") {
         Some(match matches.get_one::<String>("warp_slot") {
-            Some(_) => value_t_or_exit!(matches, "warp_slot", Slot),
+            Some(_) => matches.get_one::<String>("warp_slot").unwrap().parse::<Slot>().unwrap(),
             None => cluster_rpc_client
                 .as_ref()
                 .unwrap_or_else(|_| {
@@ -351,7 +351,7 @@ fn main() {
         });
     let faucet_pubkey = faucet_keypair.pubkey();
 
-    let faucet_time_slice_secs = matches.get_one::<String>("faucet_time_slice_secs").unwrap_or_else(|| std::process::exit(1)).parse::<u64>().unwrap();
+    let faucet_time_slice_secs = matches.get_one::<String>("faucet_time_slice_secs").unwrap().parse::<u64>().unwrap();
     let faucet_per_time_cap = matches.get_one::<String>("faucet_per_time_sol_cap")
         .map(|s| s.parse::<f64>().unwrap())
         .map(sol_to_lamports);
@@ -587,7 +587,7 @@ fn main() {
 
     if matches.get_flag("geyser_plugin_config") {
         genesis.geyser_plugin_config_files = Some(
-            values_t_or_exit!(matches, "geyser_plugin_config", String)
+            matches.get_many::<String>("geyser_plugin_config").unwrap().map(|s| s.to_string()).collect::<Vec<String>>()
                 .into_iter()
                 .map(PathBuf::from)
                 .collect(),

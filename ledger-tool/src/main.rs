@@ -139,6 +139,16 @@ enum GraphVoteAccountMode {
     WithHistory,
 }
 
+impl std::fmt::Display for GraphVoteAccountMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => write!(f, "{}", Self::DISABLED),
+            Self::LastOnly => write!(f, "{}", Self::LAST_ONLY),
+            Self::WithHistory => write!(f, "{}", Self::WITH_HISTORY),
+        }
+    }
+}
+
 impl GraphVoteAccountMode {
     const DISABLED: &'static str = "disabled";
     const LAST_ONLY: &'static str = "last-only";
@@ -873,8 +883,7 @@ fn main() {
         .long("snapshot-version")
         .value_name("SNAPSHOT_VERSION")
         .value_parser(clap::value_parser!(String))
-        
-        .default_value(SnapshotVersion::default().into())
+        .default_value(Box::leak(Box::new(SnapshotVersion::default().to_string())).as_str())
         .help("Output snapshot version");
     let debug_key_arg = Arg::new("debug_key")
         .long("debug-key")
@@ -916,10 +925,9 @@ fn main() {
 
     let mut measure_total_execution_time = Measure::start("ledger tool");
 
-    let command = ClapCommand::new(crate_name!());
-    let matches = command
+    let cli_matches = ClapCommand::new(crate_name!())
         .about(crate_description!())
-        .version(solana_version::version!())
+        .version(Box::leak(Box::new(solana_version::version!().to_string())).as_str())
         .help_template("\
 {before-help}{name} {version}
 {author-with-newline}{about-with-newline}
@@ -978,7 +986,7 @@ fn main() {
                 .value_name("METHOD")
                 
                 .value_parser(clap::value_parser!(String))
-                .default_value(BlockVerificationMethod::default().into())
+                .default_value(Box::leak(Box::new(BlockVerificationMethod::default().to_string())).as_str())
                 .global(true)
                 .help(BlockVerificationMethod::cli_message()),
         )
@@ -1239,7 +1247,7 @@ fn main() {
                         .long("vote-account-mode")
                         
                         .value_name("MODE")
-                        .default_value(default_graph_vote_account_mode.as_ref())
+                        .default_value(Box::leak(Box::new(default_graph_vote_account_mode.to_string())).as_str())
                         .value_parser(clap::value_parser!(String))
                         .help(
                             "Specify if and how to graph vote accounts. Enabling will incur \
@@ -1338,7 +1346,7 @@ fn main() {
                         .long("bootstrap-validator-lamports")
                         .value_name("LAMPORTS")
                         
-                        .default_value(default_bootstrap_validator_lamports.as_str())
+                        .default_value(Box::leak(Box::new(default_bootstrap_validator_lamports.to_string())).as_str())
                         .help("Number of lamports to assign to the bootstrap validator"),
                 )
                 .arg(
@@ -1346,7 +1354,7 @@ fn main() {
                         .long("bootstrap-validator-stake-lamports")
                         .value_name("LAMPORTS")
                         
-                        .default_value(default_bootstrap_validator_stake_lamports.as_str())
+                        .default_value(Box::leak(Box::new(default_bootstrap_validator_stake_lamports.to_string())).as_str())
                         .help(
                             "Number of lamports to assign to the bootstrap validator's stake \
                              account",
@@ -1471,7 +1479,7 @@ fn main() {
                         .value_name("METHOD")
                         
                         .value_parser(clap::value_parser!(String))
-                        .default_value(BlockProductionMethod::default().into())
+                        .default_value(Box::leak(Box::new(BlockProductionMethod::default().to_string())).as_str())
                         .help(BlockProductionMethod::cli_message()),
                 )
                 .arg(
@@ -1480,7 +1488,7 @@ fn main() {
                         .value_name("STRUCT")
                         
                         .value_parser(clap::value_parser!(String))
-                        .default_value(TransactionStructure::default().into())
+                        .default_value(Box::leak(Box::new(TransactionStructure::default().to_string())).as_str())
                         .help(TransactionStructure::cli_message()),
                 )
                 .arg(
@@ -1632,8 +1640,8 @@ fn main() {
 
     info!("{} {}", crate_name!(), solana_version::version!());
 
-    let ledger_path = PathBuf::from(matches.get_one::<String>("ledger_path").unwrap().clone());
-    let verbose_level = matches.get_count("verbose");
+    let ledger_path = PathBuf::from(cli_matches.get_one::<String>("ledger_path").unwrap().clone());
+    let verbose_level = cli_matches.get_count("verbose");
 
     // Name the rayon global thread pool
     rayon::ThreadPoolBuilder::new()
@@ -1641,7 +1649,7 @@ fn main() {
         .build_global()
         .unwrap();
 
-    match matches.subcommand() {
+    match cli_matches.subcommand() {
         Some(("bigtable", arg_matches)) => bigtable_process_command(&ledger_path, arg_matches),
         Some(("blockstore", arg_matches)) => blockstore_process_command(&ledger_path, arg_matches),
         Some(("program", arg_matches)) => program(&ledger_path, arg_matches),
@@ -1662,11 +1670,11 @@ fn main() {
         | Some(("repair-roots", _))
         | Some(("set-dead-slot", _))
         | Some(("shred-meta", _))
-        | Some(("slot", _)) => blockstore_process_command(&ledger_path, &matches),
+        | Some(("slot", _)) => blockstore_process_command(&ledger_path, &cli_matches),
         _ => {
             let ledger_path = canonicalize_ledger_path(&ledger_path);
 
-            match matches.subcommand() {
+            match cli_matches.subcommand() {
                 Some(("genesis", arg_matches)) => {
                     let output_format =
                         match arg_matches.get_one::<String>("output_format").map(|s| s.as_str()) { Some("json") => OutputFormat::Json, Some("json-compact") => OutputFormat::JsonCompact, _ => OutputFormat::Display };
@@ -1975,7 +1983,7 @@ fn main() {
                     let feature_gates_to_deactivate =
                         arg_matches.get_many::<String>("feature_gates_to_deactivate").map(|values| values.filter_map(|s| s.parse().ok()).collect::<Vec<_>>()).unwrap_or_default();
                     let vote_accounts_to_destake: HashSet<_> =
-                        arg_matches.get_many::<String>("vote_accounts_to_destake").map(|values| values.filter_map(|s| s.parse().ok()).collect::<Vec<_>>())
+                        arg_matches.get_many::<String>("vote_accounts_to_destake").map(|values| values.filter_map(|s| s.parse::<Pubkey>().ok()).collect::<Vec<_>>())
                             .unwrap_or_default()
                             .into_iter()
                             .collect();
@@ -3119,7 +3127,7 @@ fn main() {
                     }
                 }
                 Some(("", _)) => {
-                    eprintln!("{}", command.render_usage());
+                    eprintln!("Usage: {} [OPTIONS] <SUBCOMMAND>", crate_name!());
                     exit(1);
                 }
                 _ => unreachable!(),

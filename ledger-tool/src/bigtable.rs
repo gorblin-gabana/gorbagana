@@ -1304,12 +1304,15 @@ impl BigTableSubCommand for Command {
     }
 }
 
-fn get_global_subcommand_arg<T: FromStr>(
+fn get_global_subcommand_arg<T: FromStr + ToString>(
     matches: &ArgMatches,
     sub_matches: Option<&clap::ArgMatches>,
-    name: &str,
-    default: &str,
-) -> T {
+    arg_name: &str,
+    default: T,
+) -> T 
+where 
+    <T as FromStr>::Err: std::fmt::Debug 
+{
     // this is kinda stupid, but there seems to be a bug in clap when a subcommand
     // arg is marked both `global(true)` and `default_value("default_value")`.
     // despite the "global", when the arg is specified on the subcommand, its value
@@ -1320,14 +1323,14 @@ fn get_global_subcommand_arg<T: FromStr>(
     // `default_value()` obviates `is_present(...)` tests since they will always
     // return true. so we consede and compare against the expected default. :/
     let on_command = matches
-        .get_one::<String>(name)
-        .map(|v| v != default)
+        .get_one::<String>(arg_name)
+        .map(|v| v.as_str() != &default.to_string())
         .unwrap_or(false);
     if on_command {
-        matches.get_one::<String>(name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
+        matches.get_one::<String>(arg_name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
     } else {
         let sub_matches = sub_matches.as_ref().unwrap();
-        sub_matches.get_one::<String>(name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
+        sub_matches.get_one::<String>(arg_name).unwrap_or_else(|| std::process::exit(1)).parse::<T>().unwrap()
     }
 }
 
@@ -1335,20 +1338,29 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
     let verbose = matches.get_flag("verbose");
-    let output_format = OutputFormat::from_matches(matches, "output_format", verbose);
+    let output_format = if matches.get_flag("verbose") || verbose {
+        OutputFormat::DisplayVerbose
+    } else if matches.get_one::<String>("output_format").map(|s| s.as_str()) == Some("json") {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Display
+    };
 
-    let Some((subcommand, sub_matches)) = matches.subcommand();
+    let Some((subcommand, sub_matches)) = matches.subcommand() else {
+        eprintln!("No subcommand provided");
+        std::process::exit(1);
+    };
     let instance_name = get_global_subcommand_arg(
         matches,
-        sub_matches,
+        Some(sub_matches),
         "rpc_bigtable_instance_name",
-        solana_storage_bigtable::DEFAULT_INSTANCE_NAME,
+        solana_storage_bigtable::DEFAULT_INSTANCE_NAME.to_string(),
     );
     let app_profile_id = get_global_subcommand_arg(
         matches,
-        sub_matches,
+        Some(sub_matches),
         "rpc_bigtable_app_profile_id",
-        solana_storage_bigtable::DEFAULT_APP_PROFILE_ID,
+        solana_storage_bigtable::DEFAULT_APP_PROFILE_ID.to_string(),
     );
 
     let future = match (subcommand, sub_matches) {
@@ -1363,8 +1375,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             );
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: false,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
             runtime.block_on(upload(
@@ -1379,17 +1391,17 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: !arg_matches.get_flag("force"),
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
             runtime.block_on(delete_slots(slots, config))
         }
-        ("first-available-block", Some(_arg_matches)) => {
+        ("first-available-block", _arg_matches) => {
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
             runtime.block_on(first_available_block(config))
@@ -1399,8 +1411,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let show_entries = arg_matches.get_flag("show_entries");
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
             runtime.block_on(block(slot, output_format, show_entries, config))
@@ -1409,8 +1421,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let slot = arg_matches.get_one::<String>("slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
             runtime.block_on(entries(slot, output_format, config))
@@ -1453,8 +1465,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
 
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
@@ -1471,8 +1483,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
@@ -1483,8 +1495,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
@@ -1497,8 +1509,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let ref_config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
                 credential_type: CredentialType::Filepath(credential_path),
-                instance_name: ref_instance_name,
-                app_profile_id: ref_app_profile_id,
+                instance_name: instance_name,
+                app_profile_id: app_profile_id,
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
@@ -1512,15 +1524,15 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 .expect("Invalid signature");
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
             runtime.block_on(confirm(&signature, verbose, output_format, config))
         }
         ("transaction-history", arg_matches) => {
-            let address = pubkey_of(arg_matches, "address").unwrap();
+            let address = arg_matches.get_one::<String>("address").and_then(|s| s.parse::<Pubkey>().ok()).unwrap();
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let query_chunk_size = arg_matches.get_one::<String>("query_chunk_size").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let before = arg_matches
@@ -1532,8 +1544,8 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             let show_transactions = arg_matches.get_flag("show_transactions");
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
-                instance_name,
-                app_profile_id,
+                instance_name: instance_name.to_string(),
+                app_profile_id: app_profile_id.to_string(),
                 ..solana_storage_bigtable::LedgerStorageConfig::default()
             };
 
@@ -1548,7 +1560,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 config,
             ))
         }
-        ("copy", Some(arg_matches)) => runtime.block_on(copy(CopyArgs::process(arg_matches))),
+        ("copy", arg_matches) => runtime.block_on(copy(CopyArgs::process(arg_matches))),
         _ => unreachable!(),
     };
 

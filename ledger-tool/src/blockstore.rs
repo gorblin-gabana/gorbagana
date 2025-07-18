@@ -825,7 +825,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                 allow_dead_slots,
                 output_format,
                 num_slots,
-                verbose_level,
+                verbose_level as u64,
                 only_rooted,
             )?;
         }
@@ -1020,7 +1020,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
                     slot,
                     allow_dead_slots,
                     &output_format,
-                    verbose_level,
+                    verbose_level as u64,
                     &mut HashMap::new(),
                 )?;
             }
