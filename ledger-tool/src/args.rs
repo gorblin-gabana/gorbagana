@@ -205,7 +205,7 @@ pub fn snapshot_args() -> Box<[Arg]> {
 pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches) -> ProcessOptions {
     let new_hard_forks = hardforks_of(arg_matches, "hard_forks");
     let accounts_db_config = Some(get_accounts_db_config(ledger_path, arg_matches));
-    let log_messages_bytes_limit = arg_matches.get_one::<String>("log_messages_bytes_limit").and_then(|s| s.parse());
+    let log_messages_bytes_limit = arg_matches.get_one::<String>("log_messages_bytes_limit").and_then(|s| s.parse().ok());
     let runtime_config = RuntimeConfig {
         log_messages_bytes_limit,
         ..RuntimeConfig::default()
@@ -216,17 +216,17 @@ pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches) -> Pr
     }
     let run_verification =
         !(arg_matches.get_flag("skip_poh_verify") || arg_matches.get_flag("skip_verification"));
-    let halt_at_slot = arg_matches.get_one::<String>("halt_at_slot").and_then(|s| s.parse());
+    let halt_at_slot = arg_matches.get_one::<String>("halt_at_slot").and_then(|s| s.parse().ok());
     let use_snapshot_archives_at_startup = arg_matches
         .get_one::<String>(use_snapshot_archives_at_startup::cli::NAME)
         .unwrap().parse().unwrap();
     let accounts_db_skip_shrink = arg_matches.get_flag("accounts_db_skip_shrink");
     let verify_index = arg_matches.get_flag("verify_accounts_index");
     let limit_load_slot_count_from_snapshot =
-        arg_matches.get_one::<String>("limit_load_slot_count_from_snapshot").and_then(|s| s.parse());
+        arg_matches.get_one::<String>("limit_load_slot_count_from_snapshot").and_then(|s| s.parse().ok());
     let run_final_accounts_hash_calc = arg_matches.get_flag("run_final_hash_calc");
     let debug_keys = arg_matches.get_many::<String>("debug_key")
-        .map(|values| Arc::new(values.filter_map(|s| s.parse()).collect::<HashSet<_>>()));
+        .map(|values| Arc::new(values.filter_map(|s| s.parse().ok()).collect::<HashSet<_>>()));
     let allow_dead_slots = arg_matches.get_flag("allow_dead_slots");
     let abort_on_invalid_block = arg_matches.get_flag("abort_on_invalid_block");
     let no_block_cost_limits = arg_matches.get_flag("no_block_cost_limits");
@@ -260,7 +260,7 @@ pub fn get_accounts_db_config(
 ) -> AccountsDbConfig {
     let ledger_tool_ledger_path = ledger_path.join(LEDGER_TOOL_DIRECTORY);
 
-    let accounts_index_bins = arg_matches.get_one::<String>("accounts_index_bins").and_then(|s| s.parse());
+    let accounts_index_bins = arg_matches.get_one::<String>("accounts_index_bins").and_then(|s| s.parse().ok());
     let accounts_index_index_limit_mb = if arg_matches.get_flag("disable_accounts_disk_index") {
         IndexLimitMb::InMemOnly
     } else {
@@ -328,7 +328,7 @@ pub fn get_accounts_db_config(
         accounts_hash_cache_path: Some(accounts_hash_cache_path),
         ancient_append_vec_offset: arg_matches.get_one::<String>("accounts_db_ancient_append_vecs").map(|s| s.parse::<i64>().unwrap()),
         ancient_storage_ideal_size: arg_matches.get_one::<String>("accounts_db_ancient_storage_ideal_size").map(|s| s.parse::<u64>().unwrap()),
-        max_ancient_storages: arg_matches.get_one::<String>("accounts_db_max_ancient_storages").and_then(|s| s.parse()),
+        max_ancient_storages: arg_matches.get_one::<String>("accounts_db_max_ancient_storages").and_then(|s| s.parse().ok()),
         hash_calculation_pubkey_bins: arg_matches.get_one::<String>("accounts_db_hash_calculation_pubkey_bins").map(|s| s.parse::<usize>().unwrap()),
         exhaustively_verify_refcounts: arg_matches.get_flag("accounts_db_verify_refcounts"),
         skip_initial_hash_calc: arg_matches.get_flag("accounts_db_skip_initial_hash_calculation"),

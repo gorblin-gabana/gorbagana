@@ -1352,7 +1352,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
     );
 
     let future = match (subcommand, sub_matches) {
-        ("upload", Some(arg_matches)) => {
+        ("upload", arg_matches) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").map(|s| s.parse::<Slot>().unwrap());
             let ending_slot = arg_matches.get_one::<String>("ending_slot").map(|s| s.parse::<Slot>().unwrap());
             let force_reupload = arg_matches.get_flag("force_reupload");
@@ -1375,7 +1375,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 config,
             ))
         }
-        ("delete-slots", Some(arg_matches)) => {
+        ("delete-slots", arg_matches) => {
             let slots = arg_matches.get_many::<String>("slots").unwrap_or_else(|| std::process::exit(1)).map(|s| s.parse::<Slot>().unwrap()).collect::<Vec<_>>();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: !arg_matches.get_flag("force"),
@@ -1394,7 +1394,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             };
             runtime.block_on(first_available_block(config))
         }
-        ("block", Some(arg_matches)) => {
+        ("block", arg_matches) => {
             let slot = arg_matches.get_one::<String>("slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let show_entries = arg_matches.get_flag("show_entries");
             let config = solana_storage_bigtable::LedgerStorageConfig {
@@ -1405,7 +1405,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             };
             runtime.block_on(block(slot, output_format, show_entries, config))
         }
-        ("entries", Some(arg_matches)) => {
+        ("entries", arg_matches) => {
             let slot = arg_matches.get_one::<String>("slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
                 read_only: true,
@@ -1415,7 +1415,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
             };
             runtime.block_on(entries(slot, output_format, config))
         }
-        ("shreds", Some(arg_matches)) => {
+        ("shreds", arg_matches) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let ending_slot = arg_matches.get_one::<String>("ending_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             if starting_slot > ending_slot {
@@ -1466,7 +1466,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
                 config,
             ))
         }
-        ("blocks", Some(arg_matches)) => {
+        ("blocks", arg_matches) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
@@ -1478,7 +1478,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
 
             runtime.block_on(blocks(starting_slot, limit, config))
         }
-        ("compare-blocks", Some(arg_matches)) => {
+        ("compare-blocks", arg_matches) => {
             let starting_slot = arg_matches.get_one::<String>("starting_slot").unwrap_or_else(|| std::process::exit(1)).parse::<Slot>().unwrap();
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let config = solana_storage_bigtable::LedgerStorageConfig {
@@ -1504,7 +1504,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
 
             runtime.block_on(compare_blocks(starting_slot, limit, config, ref_config))
         }
-        ("confirm", Some(arg_matches)) => {
+        ("confirm", arg_matches) => {
             let signature = arg_matches
                 .get_one::<String>("signature")
                 .unwrap()
@@ -1519,7 +1519,7 @@ pub fn bigtable_process_command(ledger_path: &Path, matches: &ArgMatches) {
 
             runtime.block_on(confirm(&signature, verbose, output_format, config))
         }
-        ("transaction-history", Some(arg_matches)) => {
+        ("transaction-history", arg_matches) => {
             let address = pubkey_of(arg_matches, "address").unwrap();
             let limit = arg_matches.get_one::<String>("limit").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();
             let query_chunk_size = arg_matches.get_one::<String>("query_chunk_size").unwrap_or_else(|| std::process::exit(1)).parse::<usize>().unwrap();

@@ -832,7 +832,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches) -> Re
         Some(("print-file-metadata", arg_matches)) => {
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
-            let sst_file_name = arg_matches.get_one::<String>("file_name");
+            let sst_file_name = arg_matches.get_one::<String>("file_name").map(|s| s.as_str());
             print_blockstore_file_metadata(&blockstore, &sst_file_name)?;
         }
         Some(("purge", arg_matches)) => {
