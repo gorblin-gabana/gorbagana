@@ -1,6 +1,6 @@
 use {
     crate::{args::*, canonicalize_ledger_path, ledger_utils::*},
-    clap::{App, AppSettings, Arg, ArgMatches, SubCommand},
+    clap::{Arg, ArgMatches, Command},
     log::*,
     serde_derive::{Deserialize, Serialize},
     serde_json::Result,
@@ -73,7 +73,7 @@ fn load_accounts(path: &Path) -> Result<Input> {
     Ok(input)
 }
 
-fn load_blockstore(ledger_path: &Path, arg_matches: &ArgMatches<'_>) -> Arc<Bank> {
+fn load_blockstore(ledger_path: &Path, arg_matches: &ArgMatches) -> Arc<Bank> {
     let process_options = parse_process_options(ledger_path, arg_matches);
 
     let genesis_config = open_genesis_config_by(ledger_path, arg_matches);
@@ -94,9 +94,9 @@ pub trait ProgramSubCommand {
     fn program_subcommand(self) -> Self;
 }
 
-impl ProgramSubCommand for App<'_, '_> {
+impl ProgramSubCommand for Command {
     fn program_subcommand(self) -> Self {
-        let program_arg = Arg::with_name("PROGRAM")
+        let program_arg = Arg::new("PROGRAM")
             .help(
                 "Program file to use. This is either an ELF shared-object file to be executed, or \
                  an assembly file to be assembled and executed.",
@@ -108,27 +108,26 @@ impl ProgramSubCommand for App<'_, '_> {
         let snapshot_config_args = snapshot_args();
 
         self.subcommand(
-            SubCommand::with_name("program")
+            Command::new("program")
         .about("Run to test, debug, and analyze on-chain programs.")
-        .setting(AppSettings::InferSubcommands)
-        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand_required(true)
         .subcommand(
-            SubCommand::with_name("cfg")
+            Command::new("cfg")
                 .about("generates Control Flow Graph of the program.")
                 .arg(&program_arg)
         )
         .subcommand(
-            SubCommand::with_name("disassemble")
+            Command::new("disassemble")
                 .about("dumps disassembled code of the program.")
                 .arg(&program_arg)
         )
         .subcommand(
-            SubCommand::with_name("run")
+            Command::new("run")
                 .about(
                     "The command executes on-chain programs in a mocked environment.",
                 )
                 .arg(
-                    Arg::with_name("input")
+                    Arg::new("input")
                         .help(
                             r#"Input for the program to run on, where FILE is a name of a JSON file
 with input data, or BYTES is the number of 0-valued bytes to allocate for program parameters"
@@ -151,60 +150,54 @@ and the following fields are required
 }
 "#,
                         )
-                        .short("i")
+                        .short('i')
                         .long("input")
                         .value_name("FILE / BYTES")
-                        .takes_value(true)
                         .default_value("0"),
                 )
                 .arg(&load_genesis_config_arg)
                 .args(&snapshot_config_args)
                 .arg(
-                    Arg::with_name("memory")
+                    Arg::new("memory")
                         .help("Heap memory for the program to run on")
-                        .short("m")
+                        .short('m')
                         .long("memory")
                         .value_name("BYTES")
-                        .takes_value(true)
                         .default_value("0"),
                 )
                 .arg(
-                    Arg::with_name("mode")
+                    Arg::new("mode")
                         .help(
                             "Mode of execution, where 'interpreter' runs \
                              the program in the virtual machine's interpreter, 'debugger' is the same as 'interpreter' \
                              but hosts a GDB interface, and 'jit' precompiles the program to native machine code \
                              before execting it in the virtual machine.",
                         )
-                        .short("e")
+                        .short('e')
                         .long("mode")
-                        .takes_value(true)
                         .value_name("VALUE")
-                        .possible_values(&["interpreter", "debugger", "jit"])
+                        .value_parser(["interpreter", "debugger", "jit"])
                         .default_value("jit"),
                 )
                 .arg(
-                    Arg::with_name("instruction limit")
+                    Arg::new("instruction limit")
                         .help("Limit the number of instructions to execute")
                         .long("limit")
-                        .takes_value(true)
                         .value_name("COUNT")
                         .default_value("9223372036854775807"),
                 )
                 .arg(
-                    Arg::with_name("port")
+                    Arg::new("port")
                         .help("Port to use for the connection with a remote debugger")
                         .long("port")
-                        .takes_value(true)
                         .value_name("PORT")
                         .default_value("9001"),
                 )
                 .arg(
-                    Arg::with_name("trace")
+                    Arg::new("trace")
                         .help("Output instruction trace")
-                        .short("t")
+                        .short('t')
                         .long("trace")
-                        .takes_value(true)
                         .value_name("FILE"),
                 )
                 .arg(&program_arg)
@@ -262,19 +255,19 @@ impl<'a, 'b> LazyAnalysis<'a, 'b> {
 }
 
 fn output_trace(
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
     trace: &[[u64; 12]],
     frame: usize,
     analysis: &mut LazyAnalysis,
 ) {
-    if matches.value_of("trace").unwrap() == "stdout" {
+    if matches.get_one::<String>("trace").unwrap().as_str() == "stdout" {
         writeln!(&mut std::io::stdout(), "Frame {frame}").unwrap();
         analysis
             .analyze()
             .disassemble_trace_log(&mut std::io::stdout(), trace)
             .unwrap();
     } else {
-        let filename = format!("{}.{}", matches.value_of("trace").unwrap(), frame);
+        let filename = format!("{}.{}", matches.get_one::<String>("trace").unwrap(), frame);
         let mut fd = File::create(filename).unwrap();
         writeln!(&fd, "Frame {frame}").unwrap();
         analysis
@@ -359,11 +352,11 @@ enum Action {
     Dis,
 }
 
-fn process_static_action(action: Action, matches: &ArgMatches<'_>) {
+fn process_static_action(action: Action, matches: &ArgMatches) {
     let transaction_accounts = Vec::new();
     let program_id = Pubkey::new_unique();
     with_mock_invoke_context!(invoke_context, transaction_context, transaction_accounts);
-    let program = matches.value_of("PROGRAM").unwrap();
+    let program = matches.get_one::<String>("PROGRAM").unwrap();
     let verified_executable = load_program(Path::new(program), program_id, &invoke_context);
     let mut analysis = LazyAnalysis::new(&verified_executable);
     match action {
@@ -381,17 +374,17 @@ fn process_static_action(action: Action, matches: &ArgMatches<'_>) {
     };
 }
 
-pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
+pub fn program(ledger_path: &Path, matches: &ArgMatches) {
     let matches = match matches.subcommand() {
-        ("cfg", Some(arg_matches)) => {
+        Some(("cfg", arg_matches)) => {
             process_static_action(Action::Cfg, arg_matches);
             return;
         }
-        ("disassemble", Some(arg_matches)) => {
+        Some(("disassemble", arg_matches)) => {
             process_static_action(Action::Dis, arg_matches);
             return;
         }
-        ("run", Some(arg_matches)) => arg_matches,
+        Some(("run", arg_matches)) => arg_matches,
         _ => unreachable!(),
     };
     let ledger_path = canonicalize_ledger_path(ledger_path);
@@ -402,7 +395,7 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
     let mut program_id = Pubkey::new_unique();
     let mut cached_account_keys = vec![];
 
-    let instruction_data = match matches.value_of("input").unwrap().parse::<usize>() {
+    let instruction_data = match matches.get_one::<String>("input").unwrap().parse::<usize>() {
         Ok(allocation_size) => {
             let pubkey = Pubkey::new_unique();
             transaction_accounts.push((
@@ -413,7 +406,7 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
             vec![]
         }
         Err(_) => {
-            let input = load_accounts(Path::new(matches.value_of("input").unwrap())).unwrap();
+            let input = load_accounts(Path::new(matches.get_one::<String>("input").unwrap())).unwrap();
             program_id = input.program_id.parse::<Pubkey>().unwrap_or_else(|err| {
                 eprintln!(
                     "Invalid program ID in input {}, error {}",
@@ -505,7 +498,7 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
         sysvar::epoch_schedule::id(),
         create_account_shared_data_for_test(bank.epoch_schedule()),
     ));
-    let interpreted = matches.value_of("mode").unwrap() != "jit";
+    let interpreted = matches.get_one::<String>("mode").unwrap().as_str() != "jit";
     with_mock_invoke_context!(invoke_context, transaction_context, transaction_accounts);
 
     // Adding `DELAY_VISIBILITY_SLOT_OFFSET` to slots to accommodate for delay visibility of the program
@@ -542,7 +535,7 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
     )
     .unwrap();
 
-    let program = matches.value_of("PROGRAM").unwrap();
+    let program = matches.get_one::<String>("PROGRAM").unwrap();
     let verified_executable = load_program(Path::new(program), program_id, &invoke_context);
     let mut analysis = LazyAnalysis::new(&verified_executable);
     create_vm!(
@@ -554,12 +547,12 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
     );
     let (mut vm, _, _) = vm.unwrap();
     let start_time = Instant::now();
-    if matches.value_of("mode").unwrap() == "debugger" {
-        vm.debug_port = Some(matches.value_of("port").unwrap().parse::<u16>().unwrap());
+    if matches.get_one::<String>("mode").unwrap().as_str() == "debugger" {
+        vm.debug_port = Some(matches.get_one::<String>("port").unwrap().parse::<u16>().unwrap());
     }
     let (instruction_count, result) = vm.execute_program(&verified_executable, interpreted);
     let duration = Instant::now() - start_time;
-    if matches.occurrences_of("trace") > 0 {
+    if matches.get_count("trace") > 0 {
         // top level trace is stored in syscall_context
         if let Some(Some(syscall_context)) = vm.context_object_pointer.syscall_context.last() {
             let trace = syscall_context.trace_log.as_slice();
@@ -585,6 +578,10 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
             .get_recorded_content()
             .to_vec(),
     };
-    let output_format = OutputFormat::from_matches(matches, "output_format", false);
+    let output_format = if matches.get_one::<String>("output_format").map(|s| s.as_str()) == Some("json") {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Display
+    };
     println!("{}", output_format.formatted_string(&output));
 }

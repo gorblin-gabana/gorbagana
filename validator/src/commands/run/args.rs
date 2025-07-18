@@ -152,7 +152,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("DIR")
             
             .required(true)
-            .default_value(&default_args.ledger_path)
+            .default_value(default_args.ledger_path.as_str())
             .help("Use DIR as ledger location"),
     )
     .arg(
@@ -285,7 +285,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-max-multiple-accounts")
             .value_name("MAX ACCOUNTS")
             
-            .default_value(&default_args.rpc_max_multiple_accounts)
+            .default_value(default_args.rpc_max_multiple_accounts.as_str())
             .help(
                 "Override the default maximum accounts accepted by the getMultipleAccounts \
                  JSON RPC method",
@@ -296,7 +296,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("health-check-slot-distance")
             .value_name("SLOT_DISTANCE")
             
-            .default_value(&default_args.health_check_slot_distance)
+            .default_value(default_args.health_check_slot_distance.as_str())
             .help(
                 "Report this validator as healthy if its latest replayed optimistically \
                  confirmed slot is within the specified number of slots from the cluster's \
@@ -468,7 +468,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("dynamic-port-range")
             .value_name("MIN_PORT-MAX_PORT")
             
-            .default_value(&default_args.dynamic_port_range)
+            .default_value(default_args.dynamic_port_range.as_str())
             .value_parser(clap::value_parser!(String))
             .help("Range to use for dynamically assigned ports"),
     )
@@ -477,7 +477,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-local-snapshot-age")
             .value_name("NUMBER_OF_SLOTS")
             
-            .default_value(&default_args.maximum_local_snapshot_age)
+            .default_value(default_args.maximum_local_snapshot_age.as_str())
             .help(
                 "Reuse a local snapshot if it's less than this many slots behind the highest \
                  snapshot available for download from other validators",
@@ -502,7 +502,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .alias("incremental-snapshot-interval-slots")
             .value_name("NUMBER")
             
-            .default_value(&default_args.incremental_snapshot_archive_interval_slots)
+            .default_value(default_args.incremental_snapshot_archive_interval_slots.as_str())
             .value_parser(clap::value_parser!(u64))
             .help("Number of slots between generating snapshots")
             .long_help(
@@ -517,7 +517,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("full-snapshot-interval-slots")
             .value_name("NUMBER")
             
-            .default_value(&default_args.full_snapshot_archive_interval_slots)
+            .default_value(default_args.full_snapshot_archive_interval_slots.as_str())
             .value_parser(clap::value_parser!(u64))
             .help("Number of slots between generating full snapshots")
             .long_help(
@@ -533,7 +533,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .alias("maximum-snapshots-to-retain")
             .value_name("NUMBER")
             
-            .default_value(&default_args.maximum_full_snapshot_archives_to_retain)
+            .default_value(default_args.maximum_full_snapshot_archives_to_retain.as_str())
             .value_parser(clap::value_parser!(usize))
             .help(
                 "The maximum number of full snapshot archives to hold on to when purging \
@@ -545,7 +545,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-incremental-snapshots-to-retain")
             .value_name("NUMBER")
             
-            .default_value(&default_args.maximum_incremental_snapshot_archives_to_retain)
+            .default_value(default_args.maximum_incremental_snapshot_archives_to_retain.as_str())
             .value_parser(clap::value_parser!(usize))
             .help(
                 "The maximum number of incremental snapshot archives to hold on to when \
@@ -558,7 +558,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ADJUSTMENT")
             
             .value_parser(clap::value_parser!(i8))
-            .default_value(&default_args.snapshot_packager_niceness_adjustment)
+            .default_value(default_args.snapshot_packager_niceness_adjustment.as_str())
             .help(
                 "Add this value to niceness of snapshot packager thread. Negative value \
                  increases priority, positive value decreases priority.",
@@ -569,7 +569,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("minimal-snapshot-download-speed")
             .value_name("MINIMAL_SNAPSHOT_DOWNLOAD_SPEED")
             
-            .default_value(&default_args.min_snapshot_download_speed)
+            .default_value(default_args.min_snapshot_download_speed.as_str())
             .help(
                 "The minimal speed of snapshot downloads measured in bytes/second. If the \
                  initial download speed falls below this threshold, the system will retry the \
@@ -581,7 +581,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("maximum-snapshot-download-abort")
             .value_name("MAXIMUM_SNAPSHOT_DOWNLOAD_ABORT")
             
-            .default_value(&default_args.max_snapshot_download_abort)
+            .default_value(default_args.max_snapshot_download_abort.as_str())
             .help(
                 "The maximum number of times to abort and retry when encountering a slow \
                  snapshot download.",
@@ -592,7 +592,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("contact-debug-interval")
             .value_name("CONTACT_DEBUG_INTERVAL")
             
-            .default_value(&default_args.contact_debug_interval)
+            .default_value(default_args.contact_debug_interval.as_str())
             .help("Milliseconds between printing contact debug from gossip."),
     )
     .arg(
@@ -656,7 +656,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ROCKSDB_COMPACTION_STYLE")
             
             .possible_values(&["level"])
-            .default_value(&default_args.rocksdb_shred_compaction)
+            .default_value(default_args.rocksdb_shred_compaction.as_str())
             .help(
                 "Controls how RocksDB compacts shreds. *WARNING*: You will lose your \
                  Blockstore data when you switch between options. Possible values are: \
@@ -670,7 +670,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("COMPRESSION_TYPE")
             
             .possible_values(&["none", "lz4", "snappy", "zlib"])
-            .default_value(&default_args.rocksdb_ledger_compression)
+            .default_value(default_args.rocksdb_ledger_compression.as_str())
             .help(
                 "The compression algorithm that is used to compress transaction status data. \
                  Turning on compression can save ~10% of the ledger size.",
@@ -683,7 +683,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ROCKS_PERF_SAMPLE_INTERVAL")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rocksdb_perf_sample_interval)
+            .default_value(default_args.rocksdb_perf_sample_interval.as_str())
             .help(
                 "Controls how often RocksDB read/write performance samples are collected. \
                  Perf samples are collected in 1 / ROCKS_PERF_SAMPLE_INTERVAL sampling rate.",
@@ -868,7 +868,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_connection_pool_size")
             .long("tpu-connection-pool-size")
             
-            .default_value(&default_args.tpu_connection_pool_size)
+            .default_value(default_args.tpu_connection_pool_size.as_str())
             .value_parser(clap::value_parser!(usize))
             .help("Controls the TPU connection pool size per remote address"),
     )
@@ -876,7 +876,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_connections_per_ipaddr_per_minute")
             .long("tpu-max-connections-per-ipaddr-per-minute")
             
-            .default_value(&default_args.tpu_max_connections_per_ipaddr_per_minute)
+            .default_value(default_args.tpu_max_connections_per_ipaddr_per_minute.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the rate of the clients connections per IpAddr per minute."),
@@ -885,7 +885,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("vote_use_quic")
             .long("vote-use-quic")
             
-            .default_value(&default_args.vote_use_quic)
+            .default_value(default_args.vote_use_quic.as_str())
             .hidden(hidden_unless_forced())
             .help("Controls if to use QUIC to send votes."),
     )
@@ -893,7 +893,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_connections_per_peer")
             .long("tpu-max-connections-per-peer")
             
-            .default_value(&default_args.tpu_max_connections_per_peer)
+            .default_value(default_args.tpu_max_connections_per_peer.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the max concurrent connections per IpAddr."),
@@ -902,7 +902,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_staked_connections")
             .long("tpu-max-staked-connections")
             
-            .default_value(&default_args.tpu_max_staked_connections)
+            .default_value(default_args.tpu_max_staked_connections.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU from staked nodes."),
@@ -911,7 +911,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_unstaked_connections")
             .long("tpu-max-unstaked-connections")
             
-            .default_value(&default_args.tpu_max_unstaked_connections)
+            .default_value(default_args.tpu_max_unstaked_connections.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the max concurrent connections fort TPU from unstaked nodes."),
@@ -920,7 +920,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_fwd_staked_connections")
             .long("tpu-max-fwd-staked-connections")
             
-            .default_value(&default_args.tpu_max_fwd_staked_connections)
+            .default_value(default_args.tpu_max_fwd_staked_connections.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU-forward from staked nodes."),
@@ -929,7 +929,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_fwd_unstaked_connections")
             .long("tpu-max-fwd-unstaked-connections")
             
-            .default_value(&default_args.tpu_max_fwd_unstaked_connections)
+            .default_value(default_args.tpu_max_fwd_unstaked_connections.as_str())
             .value_parser(clap::value_parser!(u32))
             .hidden(hidden_unless_forced())
             .help("Controls the max concurrent connections for TPU-forward from unstaked nodes."),
@@ -938,7 +938,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("tpu_max_streams_per_ms")
             .long("tpu-max-streams-per-ms")
             
-            .default_value(&default_args.tpu_max_streams_per_ms)
+            .default_value(default_args.tpu_max_streams_per_ms.as_str())
             .value_parser(clap::value_parser!(usize))
             .hidden(hidden_unless_forced())
             .help("Controls the max number of streams for a TPU service."),
@@ -947,7 +947,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
         Arg::new("num_quic_endpoints")
             .long("num-quic-endpoints")
             
-            .default_value(&default_args.num_quic_endpoints)
+            .default_value(default_args.num_quic_endpoints.as_str())
             .value_parser(clap::value_parser!(usize))
             .hidden(hidden_unless_forced())
             .help("The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to \
@@ -973,7 +973,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("HOST")
             
             .value_parser(clap::value_parser!(String))
-            .default_value(&default_args.bind_address)
+            .default_value(default_args.bind_address.as_str())
             .action(ArgAction::Append)
             .help("Repeatable. IP addresses to bind the validator ports on. First is primary (used on startup), the rest may be switched to during operation."),
         )
@@ -994,7 +994,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(&default_args.rpc_threads)
+            .default_value(default_args.rpc_threads.as_str())
             .help("Number of threads to use for servicing RPC requests"),
     )
     .arg(
@@ -1003,7 +1003,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(&default_args.rpc_blocking_threads)
+            .default_value(default_args.rpc_blocking_threads.as_str())
             .help("Number of blocking threads to use for servicing CPU bound RPC requests (eg getMultipleAccounts)"),
     )
     .arg(
@@ -1012,7 +1012,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("ADJUSTMENT")
             
             .value_parser(clap::value_parser!(i8))
-            .default_value(&default_args.rpc_niceness_adjustment)
+            .default_value(default_args.rpc_niceness_adjustment.as_str())
             .help(
                 "Add this value to niceness of RPC threads. Negative value increases \
                  priority, positive value decreases priority.",
@@ -1024,7 +1024,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("SECONDS")
             .value_parser(clap::value_parser!(u64))
             
-            .default_value(&default_args.rpc_bigtable_timeout)
+            .default_value(default_args.rpc_bigtable_timeout.as_str())
             .help("Number of seconds before timing out RPC requests backed by BigTable"),
     )
     .arg(
@@ -1032,7 +1032,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-bigtable-instance-name")
             
             .value_name("INSTANCE_NAME")
-            .default_value(&default_args.rpc_bigtable_instance_name)
+            .default_value(default_args.rpc_bigtable_instance_name.as_str())
             .help("Name of the Bigtable instance to upload to"),
     )
     .arg(
@@ -1040,7 +1040,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("rpc-bigtable-app-profile-id")
             
             .value_name("APP_PROFILE_ID")
-            .default_value(&default_args.rpc_bigtable_app_profile_id)
+            .default_value(default_args.rpc_bigtable_app_profile_id.as_str())
             .help("Bigtable application profile id to use in requests"),
     )
     .arg(
@@ -1049,7 +1049,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("BYTES")
             .value_parser(clap::value_parser!(usize))
             
-            .default_value(&default_args.rpc_bigtable_max_message_size)
+            .default_value(default_args.rpc_bigtable_max_message_size.as_str())
             .help("Max encoding and decoding message size used in Bigtable Grpc client"),
     )
     .arg(
@@ -1058,7 +1058,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_pubsub_worker_threads)
+            .default_value(default_args.rpc_pubsub_worker_threads.as_str())
             .help("PubSub worker threads"),
     )
     .arg(
@@ -1080,7 +1080,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_pubsub_max_active_subscriptions)
+            .default_value(default_args.rpc_pubsub_max_active_subscriptions.as_str())
             .help(
                 "The maximum number of active subscriptions that RPC PubSub will accept \
                  across all connections.",
@@ -1092,7 +1092,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("NUMBER")
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_pubsub_queue_capacity_items)
+            .default_value(default_args.rpc_pubsub_queue_capacity_items.as_str())
             .help(
                 "The maximum number of notifications that RPC PubSub will store across all \
                  connections.",
@@ -1104,7 +1104,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             
             .value_name("BYTES")
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_pubsub_queue_capacity_bytes)
+            .default_value(default_args.rpc_pubsub_queue_capacity_bytes.as_str())
             .help(
                 "The maximum total size of notifications that RPC PubSub will store across \
                  all connections.",
@@ -1133,7 +1133,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("MILLISECS")
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(&default_args.rpc_send_transaction_retry_ms)
+            .default_value(default_args.rpc_send_transaction_retry_ms.as_str())
             .help("The rate at which transactions sent via rpc service are retried."),
     )
     .arg(
@@ -1143,7 +1143,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .hidden(hidden_unless_forced())
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(&default_args.rpc_send_transaction_batch_ms)
+            .default_value(default_args.rpc_send_transaction_batch_ms.as_str())
             .help("The rate at which transactions sent via rpc service are sent in batch."),
     )
     .arg(
@@ -1152,7 +1152,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(u64))
-            .default_value(&default_args.rpc_send_transaction_leader_forward_count)
+            .default_value(default_args.rpc_send_transaction_leader_forward_count.as_str())
             .help(
                 "The number of upcoming leaders to which to forward transactions sent via rpc \
                  service.",
@@ -1175,7 +1175,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_send_transaction_service_max_retries)
+            .default_value(default_args.rpc_send_transaction_service_max_retries.as_str())
             .help(
                 "The maximum number of transaction broadcast retries, regardless of requested \
                  value.",
@@ -1188,7 +1188,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .hidden(hidden_unless_forced())
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_send_transaction_batch_size)
+            .default_value(default_args.rpc_send_transaction_batch_size.as_str())
             .help("The size of transactions to be sent in batch."),
     )
     .arg(
@@ -1197,7 +1197,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("NUMBER")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_send_transaction_retry_pool_max_size)
+            .default_value(default_args.rpc_send_transaction_retry_pool_max_size.as_str())
             .help("The maximum size of transactions retry pool."),
     )
     .arg(
@@ -1229,7 +1229,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .value_name("BYTES")
             
             .value_parser(clap::value_parser!(usize))
-            .default_value(&default_args.rpc_max_request_body_size)
+            .default_value(default_args.rpc_max_request_body_size.as_str())
             .help("The maximum request body size accepted by rpc service"),
     )
     .arg(
@@ -1253,7 +1253,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("snapshot-archive-format")
             .alias("snapshot-compression") // Legacy name used by Solana v1.5.x and older
             .possible_values(SUPPORTED_ARCHIVE_COMPRESSION)
-            .default_value(&default_args.snapshot_archive_format)
+            .default_value(default_args.snapshot_archive_format.as_str())
             .value_name("ARCHIVE_TYPE")
             
             .help("Snapshot archive format to use."),
@@ -1261,7 +1261,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
     .arg(
         Arg::new("snapshot_zstd_compression_level")
             .long("snapshot-zstd-compression-level")
-            .default_value(&default_args.snapshot_zstd_compression_level)
+            .default_value(default_args.snapshot_zstd_compression_level.as_str())
             .value_name("LEVEL")
             
             .help("The compression level to use when archiving with zstd")
@@ -1277,7 +1277,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("max-genesis-archive-unpacked-size")
             .value_name("NUMBER")
             
-            .default_value(&default_args.genesis_archive_unpacked_size)
+            .default_value(default_args.genesis_archive_unpacked_size.as_str())
             .help("maximum total uncompressed file size of downloaded genesis archive"),
     )
     .arg(
@@ -1496,7 +1496,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("accounts-shrink-optimize-total-space")
             
             .value_name("BOOLEAN")
-            .default_value(&default_args.accounts_shrink_optimize_total_space)
+            .default_value(default_args.accounts_shrink_optimize_total_space.as_str())
             .help(
                 "When this is set to true, the system will shrink the most sparse accounts \
                  and when the overall shrink ratio is above the specified \
@@ -1509,7 +1509,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             .long("accounts-shrink-ratio")
             
             .value_name("RATIO")
-            .default_value(&default_args.accounts_shrink_ratio)
+            .default_value(default_args.accounts_shrink_ratio.as_str())
             .help(
                 "Specifies the shrink ratio for the accounts to be shrunk. The shrink ratio \
                  is defined as the ratio of the bytes alive over the  total bytes used. If \
@@ -1545,7 +1545,7 @@ pub fn add_args(app: Command, default_args: &DefaultArgs) -> Command {
             // default doesn't enable banking tracer unless this flag is
             // explicitly given, similar to --limit-ledger-size.
             // see configure_banking_trace_dir_byte_limit() for this.
-            .default_value(&default_args.banking_trace_dir_byte_limit)
+            .default_value(default_args.banking_trace_dir_byte_limit.as_str())
             .help(
                 "Enables the banking trace explicitly, which is enabled by default and writes \
                  trace files for simulate-leader-blocks, retaining up to the default or \

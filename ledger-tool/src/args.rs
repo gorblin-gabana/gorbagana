@@ -1,6 +1,6 @@
 use {
     crate::LEDGER_TOOL_DIRECTORY,
-    clap::{value_t, value_t_or_exit, values_t, values_t_or_exit, Arg, ArgMatches},
+    clap::{Arg, ArgMatches, ArgAction},
     solana_account_decoder::{UiAccountEncoding, UiDataSliceConfig},
     solana_accounts_db::{
         accounts_db::{AccountsDb, AccountsDbConfig},
@@ -31,59 +31,59 @@ use {
 /// Returns the arguments that configure AccountsDb
 pub fn accounts_db_args<'a, 'b>() -> Box<[Arg<'a, 'b>]> {
     vec![
-        Arg::with_name("account_paths")
+        Arg::new("account_paths")
             .long("accounts")
             .value_name("PATHS")
-            .takes_value(true)
+            
             .help(
                 "Persistent accounts location. May be specified multiple times. \
                 [default: <LEDGER>/accounts]",
             ),
-        Arg::with_name("accounts_index_path")
+        Arg::new("accounts_index_path")
             .long("accounts-index-path")
             .value_name("PATH")
-            .takes_value(true)
-            .multiple(true)
+            
+            .action(ArgAction::Append)
             .help(
                 "Persistent accounts-index location. May be specified multiple times. \
                 [default: <LEDGER>/accounts_index]",
             ),
-        Arg::with_name("accounts_hash_cache_path")
+        Arg::new("accounts_hash_cache_path")
             .long("accounts-hash-cache-path")
             .value_name("PATH")
-            .takes_value(true)
+            
             .help(
                 "Use PATH as accounts hash cache location [default: <LEDGER>/accounts_hash_cache]",
             ),
-        Arg::with_name("accounts_index_bins")
+        Arg::new("accounts_index_bins")
             .long("accounts-index-bins")
             .value_name("BINS")
-            .validator(is_pow2)
-            .takes_value(true)
+                            .value_parser(clap::value_parser!(usize))
+            
             .help("Number of bins to divide the accounts index into"),
-        Arg::with_name("disable_accounts_disk_index")
+        Arg::new("disable_accounts_disk_index")
             .long("disable-accounts-disk-index")
             .help(
                 "Disable the disk-based accounts index. It is enabled by default. The entire \
                  accounts index will be kept in memory.",
             ),
-        Arg::with_name("accounts_db_skip_shrink")
+        Arg::new("accounts_db_skip_shrink")
             .long("accounts-db-skip-shrink")
             .help(
                 "Enables faster starting of ledger-tool by skipping shrink. This option is for \
                  use during testing.",
             ),
-        Arg::with_name("accounts_db_verify_refcounts")
+        Arg::new("accounts_db_verify_refcounts")
             .long("accounts-db-verify-refcounts")
             .help(
                 "Debug option to scan all AppendVecs and verify account index refcounts prior to \
                  clean",
             )
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_scan_filter_for_shrinking")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_scan_filter_for_shrinking")
             .long("accounts-db-scan-filter-for-shrinking")
-            .takes_value(true)
-            .possible_values(&["all", "only-abnormal", "only-abnormal-with-verify"])
+            
+                            .value_parser(["all", "only-abnormal", "only-abnormal-with-verify"])
             .help(
                 "Debug option to use different type of filtering for accounts index scan in \
                  shrinking. \"all\" will scan both in-memory and on-disk accounts index, which is \
@@ -94,59 +94,59 @@ pub fn accounts_db_args<'a, 'b>() -> Box<[Arg<'a, 'b>]> {
                  in-memory index for abnormal entries, but will also verify that on-disk account \
                  entries are indeed normal.",
             )
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_skip_initial_hash_calculation")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_skip_initial_hash_calculation")
             .long("accounts-db-skip-initial-hash-calculation")
             .help("Do not verify accounts hash at startup.")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_ancient_append_vecs")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_ancient_append_vecs")
             .long("accounts-db-ancient-append-vecs")
             .value_name("SLOT-OFFSET")
-            .validator(is_parsable::<i64>)
-            .takes_value(true)
+            .value_parser(clap::value_parser!(String))
+            
             .help(
                 "AppendVecs that are older than (slots_per_epoch - SLOT-OFFSET) are squashed \
                  together.",
             )
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_access_storages_method")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_access_storages_method")
             .long("accounts-db-access-storages-method")
             .value_name("METHOD")
-            .takes_value(true)
-            .possible_values(&["mmap", "file"])
+            
+                            .value_parser(["mmap", "file"])
             .help("Access account storages using this method"),
-        Arg::with_name("accounts_db_snapshots_use_experimental_accumulator_hash")
+        Arg::new("accounts_db_snapshots_use_experimental_accumulator_hash")
             .long("accounts-db-snapshots-use-experimental-accumulator-hash")
             .help("Snapshots use the experimental accumulator hash")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_hash_threads")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_hash_threads")
             .long("accounts-db-hash-threads")
             .value_name("NUM_THREADS")
-            .takes_value(true)
-            .validator(|s| is_within_range(s, 1..=num_cpus::get()))
+            
+                            .value_parser(clap::value_parser!(usize))
             .help("Number of threads to use for background accounts hashing")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_ancient_storage_ideal_size")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_ancient_storage_ideal_size")
             .long("accounts-db-ancient-storage-ideal-size")
             .value_name("BYTES")
-            .validator(is_parsable::<u64>)
-            .takes_value(true)
+            .value_parser(clap::value_parser!(String))
+            
             .help("The smallest size of ideal ancient storage.")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_max_ancient_storages")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_max_ancient_storages")
             .long("accounts-db-max-ancient-storages")
             .value_name("USIZE")
-            .validator(is_parsable::<usize>)
-            .takes_value(true)
+            .value_parser(clap::value_parser!(String))
+            
             .help("The number of ancient storages the ancient slot combining should converge to.")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_hash_calculation_pubkey_bins")
+            .hide(hidden_unless_forced()),
+        Arg::new("accounts_db_hash_calculation_pubkey_bins")
             .long("accounts-db-hash-calculation-pubkey-bins")
             .value_name("USIZE")
-            .validator(is_parsable::<usize>)
-            .takes_value(true)
+            .value_parser(clap::value_parser!(String))
+            
             .help("The number of pubkey bins used for accounts hash calculation.")
-            .hidden(hidden_unless_forced()),
+            .hide(hidden_unless_forced()),
     ]
     .into_boxed_slice()
 }
@@ -159,10 +159,10 @@ const MAX_GENESIS_ARCHIVE_UNPACKED_SIZE_STR: &str = "10485760";
 
 /// Returns the arguments that configure loading genesis
 pub fn load_genesis_arg<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name("max_genesis_archive_unpacked_size")
+    Arg::new("max_genesis_archive_unpacked_size")
         .long("max-genesis-archive-unpacked-size")
         .value_name("NUMBER")
-        .takes_value(true)
+        
         .default_value(MAX_GENESIS_ARCHIVE_UNPACKED_SIZE_STR)
         .help("maximum total uncompressed size of unpacked genesis archive")
 }
@@ -170,28 +170,28 @@ pub fn load_genesis_arg<'a, 'b>() -> Arg<'a, 'b> {
 /// Returns the arguments that configure snapshot loading
 pub fn snapshot_args<'a, 'b>() -> Box<[Arg<'a, 'b>]> {
     vec![
-        Arg::with_name("no_snapshot")
+        Arg::new("no_snapshot")
             .long("no-snapshot")
-            .takes_value(false)
+            .action(ArgAction::SetTrue)
             .help("Do not start from a local snapshot if present"),
-        Arg::with_name("snapshots")
+        Arg::new("snapshots")
             .long("snapshots")
             .alias("snapshot-archive-path")
             .alias("full-snapshot-archive-path")
             .value_name("DIR")
-            .takes_value(true)
+            
             .global(true)
             .help("Use DIR for snapshot location [default: --ledger value]"),
-        Arg::with_name("incremental_snapshot_archive_path")
+        Arg::new("incremental_snapshot_archive_path")
             .long("incremental-snapshot-archive-path")
             .value_name("DIR")
-            .takes_value(true)
+            
             .global(true)
             .help("Use DIR for separate incremental snapshot location"),
-        Arg::with_name(use_snapshot_archives_at_startup::cli::NAME)
+        Arg::new(use_snapshot_archives_at_startup::cli::NAME)
             .long(use_snapshot_archives_at_startup::cli::LONG_ARG)
-            .takes_value(true)
-            .possible_values(use_snapshot_archives_at_startup::cli::POSSIBLE_VALUES)
+            
+                            .value_parser(clap::value_parser!(String))
             .default_value(use_snapshot_archives_at_startup::cli::default_value_for_ledger_tool())
             .help(use_snapshot_archives_at_startup::cli::HELP)
             .long_help(use_snapshot_archives_at_startup::cli::LONG_HELP),
@@ -202,36 +202,34 @@ pub fn snapshot_args<'a, 'b>() -> Box<[Arg<'a, 'b>]> {
 /// Parse a `ProcessOptions` from subcommand arguments. This function attempts
 /// to parse all flags related to `ProcessOptions`; however, subcommands that
 /// use this function may not support all flags.
-pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches<'_>) -> ProcessOptions {
+pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches) -> ProcessOptions {
     let new_hard_forks = hardforks_of(arg_matches, "hard_forks");
     let accounts_db_config = Some(get_accounts_db_config(ledger_path, arg_matches));
-    let log_messages_bytes_limit = value_t!(arg_matches, "log_messages_bytes_limit", usize).ok();
+    let log_messages_bytes_limit = arg_matches.get_one::<String>("log_messages_bytes_limit").and_then(|s| s.parse().ok());
     let runtime_config = RuntimeConfig {
         log_messages_bytes_limit,
         ..RuntimeConfig::default()
     };
 
-    if arg_matches.is_present("skip_poh_verify") {
+    if arg_matches.get_flag("skip_poh_verify") {
         eprintln!("--skip-poh-verify is deprecated.  Replace with --skip-verification.");
     }
     let run_verification =
-        !(arg_matches.is_present("skip_poh_verify") || arg_matches.is_present("skip_verification"));
-    let halt_at_slot = value_t!(arg_matches, "halt_at_slot", Slot).ok();
-    let use_snapshot_archives_at_startup = value_t_or_exit!(
-        arg_matches,
-        use_snapshot_archives_at_startup::cli::NAME,
-        UseSnapshotArchivesAtStartup
-    );
-    let accounts_db_skip_shrink = arg_matches.is_present("accounts_db_skip_shrink");
-    let verify_index = arg_matches.is_present("verify_accounts_index");
+        !(arg_matches.get_flag("skip_poh_verify") || arg_matches.get_flag("skip_verification"));
+    let halt_at_slot = arg_matches.get_one::<String>("halt_at_slot").and_then(|s| s.parse().ok());
+    let use_snapshot_archives_at_startup = arg_matches
+        .get_one::<String>(use_snapshot_archives_at_startup::cli::NAME)
+        .unwrap().parse().unwrap();
+    let accounts_db_skip_shrink = arg_matches.get_flag("accounts_db_skip_shrink");
+    let verify_index = arg_matches.get_flag("verify_accounts_index");
     let limit_load_slot_count_from_snapshot =
-        value_t!(arg_matches, "limit_load_slot_count_from_snapshot", usize).ok();
-    let run_final_accounts_hash_calc = arg_matches.is_present("run_final_hash_calc");
-    let debug_keys = pubkeys_of(arg_matches, "debug_key")
-        .map(|pubkeys| Arc::new(pubkeys.into_iter().collect::<HashSet<_>>()));
-    let allow_dead_slots = arg_matches.is_present("allow_dead_slots");
-    let abort_on_invalid_block = arg_matches.is_present("abort_on_invalid_block");
-    let no_block_cost_limits = arg_matches.is_present("no_block_cost_limits");
+        arg_matches.get_one::<String>("limit_load_slot_count_from_snapshot").and_then(|s| s.parse().ok());
+    let run_final_accounts_hash_calc = arg_matches.get_flag("run_final_hash_calc");
+    let debug_keys = arg_matches.get_many::<String>("debug_key")
+        .map(|values| Arc::new(values.filter_map(|s| s.parse().ok()).collect::<HashSet<_>>()));
+    let allow_dead_slots = arg_matches.get_flag("allow_dead_slots");
+    let abort_on_invalid_block = arg_matches.get_flag("abort_on_invalid_block");
+    let no_block_cost_limits = arg_matches.get_flag("no_block_cost_limits");
 
     ProcessOptions {
         new_hard_forks,
@@ -258,12 +256,12 @@ pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches<'_>) -
 // by this function.
 pub fn get_accounts_db_config(
     ledger_path: &Path,
-    arg_matches: &ArgMatches<'_>,
+    arg_matches: &ArgMatches,
 ) -> AccountsDbConfig {
     let ledger_tool_ledger_path = ledger_path.join(LEDGER_TOOL_DIRECTORY);
 
-    let accounts_index_bins = value_t!(arg_matches, "accounts_index_bins", usize).ok();
-    let accounts_index_index_limit_mb = if arg_matches.is_present("disable_accounts_disk_index") {
+    let accounts_index_bins = arg_matches.get_one::<String>("accounts_index_bins").and_then(|s| s.parse().ok());
+    let accounts_index_index_limit_mb = if arg_matches.get_flag("disable_accounts_disk_index") {
         IndexLimitMb::InMemOnly
     } else {
         IndexLimitMb::Minimal
@@ -280,7 +278,7 @@ pub fn get_accounts_db_config(
     };
 
     let accounts_hash_cache_path = arg_matches
-        .value_of("accounts_hash_cache_path")
+        .get_one::<String>("accounts_hash_cache_path")
         .map(Into::into)
         .unwrap_or_else(|| {
             ledger_tool_ledger_path.join(AccountsDb::DEFAULT_ACCOUNTS_HASH_CACHE_DIR)
@@ -297,8 +295,8 @@ pub fn get_accounts_db_config(
         .unwrap();
 
     let storage_access = arg_matches
-        .value_of("accounts_db_access_storages_method")
-        .map(|method| match method {
+        .get_one::<String>("accounts_db_access_storages_method")
+        .map(|method| match method.as_str() {
             "mmap" => StorageAccess::Mmap,
             "file" => StorageAccess::File,
             _ => {
@@ -309,8 +307,8 @@ pub fn get_accounts_db_config(
         .unwrap_or_default();
 
     let scan_filter_for_shrinking = arg_matches
-        .value_of("accounts_db_scan_filter_for_shrinking")
-        .map(|filter| match filter {
+        .get_one::<String>("accounts_db_scan_filter_for_shrinking")
+        .map(|filter| match filter.as_str() {
             "all" => ScanFilter::All,
             "only-abnormal" => ScanFilter::OnlyAbnormal,
             "only-abnormal-with-verify" => ScanFilter::OnlyAbnormalWithVerify,
@@ -322,8 +320,8 @@ pub fn get_accounts_db_config(
         .unwrap_or_default();
 
     let num_hash_threads = arg_matches
-        .is_present("accounts_db_hash_threads")
-        .then(|| value_t_or_exit!(arg_matches, "accounts_db_hash_threads", NonZeroUsize));
+        .get_one::<String>("accounts_db_hash_threads")
+        .map(|s| s.parse().unwrap());
 
     AccountsDbConfig {
         index: Some(accounts_index_config),
@@ -337,26 +335,26 @@ pub fn get_accounts_db_config(
             u64
         )
         .ok(),
-        max_ancient_storages: value_t!(arg_matches, "accounts_db_max_ancient_storages", usize).ok(),
+        max_ancient_storages: arg_matches.get_one::<String>("accounts_db_max_ancient_storages").and_then(|s| s.parse().ok()),
         hash_calculation_pubkey_bins: value_t!(
             arg_matches,
             "accounts_db_hash_calculation_pubkey_bins",
             usize
         )
         .ok(),
-        exhaustively_verify_refcounts: arg_matches.is_present("accounts_db_verify_refcounts"),
-        skip_initial_hash_calc: arg_matches.is_present("accounts_db_skip_initial_hash_calculation"),
+        exhaustively_verify_refcounts: arg_matches.get_flag("accounts_db_verify_refcounts"),
+        skip_initial_hash_calc: arg_matches.get_flag("accounts_db_skip_initial_hash_calculation"),
         storage_access,
         scan_filter_for_shrinking,
         snapshots_use_experimental_accumulator_hash: arg_matches
-            .is_present("accounts_db_snapshots_use_experimental_accumulator_hash"),
+            .get_flag("accounts_db_snapshots_use_experimental_accumulator_hash"),
         num_hash_threads,
         ..AccountsDbConfig::default()
     }
 }
 
-pub(crate) fn parse_encoding_format(matches: &ArgMatches<'_>) -> UiAccountEncoding {
-    match matches.value_of("encoding") {
+pub(crate) fn parse_encoding_format(matches: &ArgMatches) -> UiAccountEncoding {
+    match matches.get_one::<String>("encoding").map(|s| s.as_str()) {
         Some("jsonParsed") => UiAccountEncoding::JsonParsed,
         Some("base64") => UiAccountEncoding::Base64,
         Some("base64+zstd") => UiAccountEncoding::Base64Zstd,
@@ -364,9 +362,9 @@ pub(crate) fn parse_encoding_format(matches: &ArgMatches<'_>) -> UiAccountEncodi
     }
 }
 
-pub(crate) fn parse_account_output_config(matches: &ArgMatches<'_>) -> CliAccountNewConfig {
+pub(crate) fn parse_account_output_config(matches: &ArgMatches) -> CliAccountNewConfig {
     let data_encoding = parse_encoding_format(matches);
-    let output_account_data = !matches.is_present("no_account_data");
+    let output_account_data = !matches.get_flag("no_account_data");
     let data_slice_config = if output_account_data {
         // None yields the entire account in the slice
         None
@@ -387,8 +385,8 @@ pub(crate) fn parse_account_output_config(matches: &ArgMatches<'_>) -> CliAccoun
 }
 
 // This function is duplicated in validator/src/main.rs...
-pub fn hardforks_of(matches: &ArgMatches<'_>, name: &str) -> Option<Vec<Slot>> {
-    if matches.is_present(name) {
+pub fn hardforks_of(matches: &ArgMatches, name: &str) -> Option<Vec<Slot>> {
+    if matches.get_flag(name) {
         Some(values_t_or_exit!(matches, name, Slot))
     } else {
         None

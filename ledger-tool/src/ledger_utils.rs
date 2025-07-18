@@ -1,6 +1,6 @@
 use {
     crate::LEDGER_TOOL_DIRECTORY,
-    clap::{value_t, value_t_or_exit, values_t_or_exit, ArgMatches},
+    clap::{ArgMatches},
     crossbeam_channel::unbounded,
     log::*,
     solana_accounts_db::{
@@ -143,13 +143,11 @@ pub fn load_and_process_ledger(
 
     let mut starting_slot = 0; // default start check with genesis
     let snapshot_config = {
-        let full_snapshot_archives_dir = value_t!(arg_matches, "snapshots", String)
-            .ok()
+        let full_snapshot_archives_dir = arg_matches.get_one::<String>("snapshots")
             .map(PathBuf::from)
             .unwrap_or_else(|| blockstore.ledger_path().to_path_buf());
         let incremental_snapshot_archives_dir =
-            value_t!(arg_matches, "incremental_snapshot_archive_path", String)
-                .ok()
+            arg_matches.get_one::<String>("incremental_snapshot_archive_path")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| full_snapshot_archives_dir.clone());
         if let Some(full_snapshot_slot) =
@@ -163,7 +161,7 @@ pub fn load_and_process_ledger(
                 .unwrap_or_default();
             starting_slot = std::cmp::max(full_snapshot_slot, incremental_snapshot_slot);
         }
-        let usage = if arg_matches.is_present("no_snapshot") {
+        let usage = if arg_matches.get_flag("no_snapshot") {
             SnapshotUsage::Disabled
         } else {
             SnapshotUsage::LoadOnly
@@ -204,7 +202,7 @@ pub fn load_and_process_ledger(
         }
     }
 
-    let account_paths = if let Some(account_paths) = arg_matches.value_of("account_paths") {
+    let account_paths = if let Some(account_paths) = arg_matches.get_one::<String>("account_paths") {
         // If this blockstore access is Primary, no other process (agave-validator) can hold
         // Primary access. So, allow a custom accounts path without worry of wiping the accounts
         // of agave-validator.
@@ -265,7 +263,7 @@ pub fn load_and_process_ledger(
     clean_orphaned_account_snapshot_dirs(&bank_snapshots_dir, &account_snapshot_paths)
         .map_err(LoadAndProcessLedgerError::CleanOrphanedAccountSnapshotDirectories)?;
 
-    let geyser_plugin_active = arg_matches.is_present("geyser_plugin_config");
+    let geyser_plugin_active = arg_matches.get_flag("geyser_plugin_config");
     let (accounts_update_notifier, transaction_notifier) = if geyser_plugin_active {
         let geyser_config_files = values_t_or_exit!(arg_matches, "geyser_plugin_config", String)
             .into_iter()
@@ -290,7 +288,7 @@ pub fn load_and_process_ledger(
     // the common exit flag. This is coupled to draining TSS receiver queue first.
     let tss_exit = Arc::new(AtomicBool::new(false));
 
-    let enable_rpc_transaction_history = arg_matches.is_present("enable_rpc_transaction_history");
+    let enable_rpc_transaction_history = arg_matches.get_flag("enable_rpc_transaction_history");
 
     let (transaction_status_sender, transaction_status_service) =
         if geyser_plugin_active || enable_rpc_transaction_history {
@@ -314,7 +312,7 @@ pub fn load_and_process_ledger(
                 enable_rpc_transaction_history,
                 transaction_notifier,
                 write_blockstore.clone(),
-                arg_matches.is_present("enable_extended_tx_metadata_storage"),
+                arg_matches.get_flag("enable_extended_tx_metadata_storage"),
                 tss_exit.clone(),
             );
 
@@ -341,14 +339,12 @@ pub fn load_and_process_ledger(
             exit.clone(),
         )
         .map_err(LoadAndProcessLedgerError::LoadBankForks)?;
-    let block_verification_method = value_t_or_exit!(
-        arg_matches,
-        "block_verification_method",
-        BlockVerificationMethod
-    );
+    let block_verification_method = arg_matches.get_one::<String>("block_verification_method")
+        .unwrap().parse().unwrap();
     info!("Using: block-verification-method: {block_verification_method}");
     let unified_scheduler_handler_threads =
-        value_t!(arg_matches, "unified_scheduler_handler_threads", usize).ok();
+        arg_matches.get_one::<String>("unified_scheduler_handler_threads")
+            .and_then(|s| s.parse().ok());
     match block_verification_method {
         BlockVerificationMethod::BlockstoreProcessor => {
             info!("no scheduler pool is installed for block verification...");
@@ -438,10 +434,10 @@ pub fn open_blockstore(
     access_type: AccessType,
 ) -> Blockstore {
     let wal_recovery_mode = matches
-        .value_of("wal_recovery_mode")
+        .get_one::<String>("wal_recovery_mode")
         .map(BlockstoreRecoveryMode::from);
-    let force_update_to_open = matches.is_present("force_update_to_open");
-    let enforce_ulimit_nofile = !matches.is_present("ignore_ulimit_nofile_error");
+    let force_update_to_open = matches.get_flag("force_update_to_open");
+    let enforce_ulimit_nofile = !matches.get_flag("ignore_ulimit_nofile_error");
 
     match Blockstore::open_with_options(
         ledger_path,
@@ -542,9 +538,9 @@ fn open_blockstore_with_temporary_primary_access(
     )
 }
 
-pub fn open_genesis_config_by(ledger_path: &Path, matches: &ArgMatches<'_>) -> GenesisConfig {
+pub fn open_genesis_config_by(ledger_path: &Path, matches: &ArgMatches) -> GenesisConfig {
     let max_genesis_archive_unpacked_size =
-        value_t_or_exit!(matches, "max_genesis_archive_unpacked_size", u64);
+        matches.get_one::<String>("max_genesis_archive_unpacked_size").unwrap().parse().unwrap();
 
     open_genesis_config(ledger_path, max_genesis_archive_unpacked_size).unwrap_or_else(|err| {
         eprintln!("Exiting. Failed to open genesis config: {err}");
