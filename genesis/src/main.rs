@@ -4,18 +4,14 @@
 use {
     agave_feature_set::FEATURE_NAMES,
     base64::{prelude::BASE64_STANDARD, Engine},
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg, ArgMatches},
+    chrono::DateTime,
+    clap::{Arg, ArgAction, ArgMatches, Command},
     itertools::Itertools,
     solana_account::{Account, AccountSharedData, ReadableAccount, WritableAccount},
-    solana_accounts_db::hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
-    solana_clap_utils::{
-        input_parsers::{
-            cluster_type_of, pubkey_of, pubkeys_of, unix_timestamp_from_rfc3339_datetime,
-        },
-        input_validators::{
-            is_pubkey, is_pubkey_or_keypair, is_rfc3339_datetime, is_slot, is_url_or_moniker,
-            is_valid_percentage, normalize_to_url_if_moniker,
-        },
+
+    solana_clap_utils::input_validators::{
+        is_pubkey, is_pubkey_or_keypair, is_rfc3339_datetime, is_slot, is_url_or_moniker,
+        is_valid_percentage, normalize_to_url_if_moniker,
     },
     solana_clock as clock,
     solana_commitment_config::CommitmentConfig,
@@ -32,7 +28,7 @@ use {
     solana_keypair::{read_keypair_file, Keypair},
     solana_ledger::{blockstore::create_new_ledger, blockstore_options::LedgerColumnOptions},
     solana_loader_v3_interface::state::UpgradeableLoaderState,
-    solana_native_token::sol_to_lamports,
+
     solana_poh_config::PohConfig,
     solana_pubkey::Pubkey,
     solana_rent::Rent,
@@ -178,9 +174,16 @@ fn check_rpc_genesis_hash(
 
 fn features_to_deactivate_for_cluster(
     cluster_type: &ClusterType,
-    matches: &ArgMatches<'_>,
+    matches: &ArgMatches,
 ) -> Result<Vec<Pubkey>, Box<dyn error::Error>> {
-    let mut features_to_deactivate = pubkeys_of(matches, "deactivate_feature").unwrap_or_default();
+    let mut features_to_deactivate: Vec<Pubkey> = matches
+        .get_many::<String>("deactivate_feature")
+        .map(|values| {
+            values
+                .map(|value| value.parse::<Pubkey>().unwrap())
+                .collect()
+        })
+        .unwrap_or_default();
     if cluster_type == &ClusterType::Development {
         return Ok(features_to_deactivate);
     }
@@ -192,8 +195,9 @@ fn features_to_deactivate_for_cluster(
     ));
     let json_rpc_url = normalize_to_url_if_moniker(
         matches
-            .value_of("json_rpc_url")
-            .unwrap_or(matches.value_of("cluster_type").unwrap()),
+            .get_one::<String>("json_rpc_url")
+            .map(|s| s.as_str())
+            .unwrap_or(matches.get_one::<String>("cluster_type").unwrap()),
     );
     let rpc_client = RpcClient::new_with_commitment(json_rpc_url, CommitmentConfig::confirmed());
     check_rpc_genesis_hash(cluster_type, &rpc_client)?;
@@ -285,191 +289,137 @@ fn rent_exempt_check(stake_lamports: u64, exempt: u64) -> io::Result<()> {
 
 #[allow(clippy::cognitive_complexity)]
 fn main() -> Result<(), Box<dyn error::Error>> {
-    let default_faucet_pubkey = solana_cli_config::Config::default().keypair_path;
-    let fee_rate_governor = FeeRateGovernor::default();
-    let (
-        default_target_lamports_per_signature,
-        default_target_signatures_per_slot,
-        default_fee_burn_percentage,
-    ) = {
-        (
-            &fee_rate_governor.target_lamports_per_signature.to_string(),
-            &fee_rate_governor.target_signatures_per_slot.to_string(),
-            &fee_rate_governor.burn_percent.to_string(),
-        )
-    };
-
-    let rent = Rent::default();
-    let (
-        default_lamports_per_byte_year,
-        default_rent_exemption_threshold,
-        default_rent_burn_percentage,
-    ) = {
-        (
-            &rent.lamports_per_byte_year.to_string(),
-            &rent.exemption_threshold.to_string(),
-            &rent.burn_percent.to_string(),
-        )
-    };
-
-    // vote account
-    let default_bootstrap_validator_lamports = &sol_to_lamports(500.0)
-        .max(VoteStateV3::get_rent_exempt_reserve(&rent))
-        .to_string();
-    // stake account
-    let default_bootstrap_validator_stake_lamports = &sol_to_lamports(0.5)
-        .max(rent.minimum_balance(StakeStateV2::size_of()))
-        .to_string();
-
     let default_target_tick_duration = PohConfig::default().target_tick_duration;
-    let default_ticks_per_slot = &clock::DEFAULT_TICKS_PER_SLOT.to_string();
-    let default_cluster_type = "mainnet-beta";
-    let default_genesis_archive_unpacked_size = MAX_GENESIS_ARCHIVE_UNPACKED_SIZE.to_string();
 
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .version("3.0.0")
         .arg(
-            Arg::with_name("creation_time")
+            Arg::new("creation_time")
                 .long("creation-time")
                 .value_name("RFC3339 DATE TIME")
-                .validator(is_rfc3339_datetime)
-                .takes_value(true)
+                .value_parser(|s: &str| is_rfc3339_datetime(s))
                 .help("Time when the bootstrap validator will start the cluster [default: current system time]"),
         )
         .arg(
-            Arg::with_name("bootstrap_validator")
-                .short("b")
+            Arg::new("bootstrap_validator")
+                .short('b')
                 .long("bootstrap-validator")
                 .value_name("IDENTITY_PUBKEY VOTE_PUBKEY STAKE_PUBKEY")
-                .takes_value(true)
-                .validator(is_pubkey_or_keypair)
-                .number_of_values(3)
-                .multiple(true)
+                .value_parser(|s: &str| is_pubkey_or_keypair(s))
+                .num_args(3)
+                .action(clap::ArgAction::Append)
                 .required(true)
                 .help("The bootstrap validator's identity, vote and stake pubkeys"),
         )
         .arg(
-            Arg::with_name("ledger_path")
-                .short("l")
+            Arg::new("ledger_path")
+                .short('l')
                 .long("ledger")
                 .value_name("DIR")
-                .takes_value(true)
                 .required(true)
                 .help("Use directory as persistent ledger location"),
         )
         .arg(
-            Arg::with_name("faucet_lamports")
-                .short("t")
+            Arg::new("faucet_lamports")
+                .short('t')
                 .long("faucet-lamports")
                 .value_name("LAMPORTS")
-                .takes_value(true)
                 .help("Number of lamports to assign to the faucet"),
         )
         .arg(
-            Arg::with_name("faucet_pubkey")
-                .short("m")
+            Arg::new("faucet_pubkey")
+                .short('m')
                 .long("faucet-pubkey")
                 .value_name("PUBKEY")
-                .takes_value(true)
-                .validator(is_pubkey_or_keypair)
+                .value_parser(|s: &str| is_pubkey_or_keypair(s))
                 .requires("faucet_lamports")
-                .default_value(&default_faucet_pubkey)
+                .default_value("~/.config/solana/id.json")
                 .help("Path to file containing the faucet's pubkey"),
         )
         .arg(
-            Arg::with_name("bootstrap_stake_authorized_pubkey")
+            Arg::new("bootstrap_stake_authorized_pubkey")
                 .long("bootstrap-stake-authorized-pubkey")
                 .value_name("BOOTSTRAP STAKE AUTHORIZED PUBKEY")
-                .takes_value(true)
-                .validator(is_pubkey_or_keypair)
+                .value_parser(|s: &str| is_pubkey_or_keypair(s))
                 .help(
                     "Path to file containing the pubkey authorized to manage the bootstrap \
                      validator's stake [default: --bootstrap-validator IDENTITY_PUBKEY]",
                 ),
         )
         .arg(
-            Arg::with_name("bootstrap_validator_lamports")
+            Arg::new("bootstrap_validator_lamports")
                 .long("bootstrap-validator-lamports")
                 .value_name("LAMPORTS")
-                .takes_value(true)
-                .default_value(default_bootstrap_validator_lamports)
+                .default_value("42000000000")
                 .help("Number of lamports to assign to the bootstrap validator"),
         )
         .arg(
-            Arg::with_name("bootstrap_validator_stake_lamports")
+            Arg::new("bootstrap_validator_stake_lamports")
                 .long("bootstrap-validator-stake-lamports")
                 .value_name("LAMPORTS")
-                .takes_value(true)
-                .default_value(default_bootstrap_validator_stake_lamports)
+                .default_value("500000000")
                 .help("Number of lamports to assign to the bootstrap validator's stake account"),
         )
         .arg(
-            Arg::with_name("target_lamports_per_signature")
+            Arg::new("target_lamports_per_signature")
                 .long("target-lamports-per-signature")
                 .value_name("LAMPORTS")
-                .takes_value(true)
-                .default_value(default_target_lamports_per_signature)
+                .default_value("5000")
                 .help(
                     "The cost in lamports that the cluster will charge for signature \
                      verification when the cluster is operating at target-signatures-per-slot",
                 ),
         )
         .arg(
-            Arg::with_name("lamports_per_byte_year")
+            Arg::new("lamports_per_byte_year")
                 .long("lamports-per-byte-year")
                 .value_name("LAMPORTS")
-                .takes_value(true)
-                .default_value(default_lamports_per_byte_year)
+                .default_value("1000000000")
                 .help(
                     "The cost in lamports that the cluster will charge per byte per year \
                      for accounts with data",
                 ),
         )
         .arg(
-            Arg::with_name("rent_exemption_threshold")
+            Arg::new("rent_exemption_threshold")
                 .long("rent-exemption-threshold")
                 .value_name("NUMBER")
-                .takes_value(true)
-                .default_value(default_rent_exemption_threshold)
+                .default_value("2.0")
                 .help(
                     "amount of time (in years) the balance has to include rent for \
                      to qualify as rent exempted account",
                 ),
         )
         .arg(
-            Arg::with_name("rent_burn_percentage")
+            Arg::new("rent_burn_percentage")
                 .long("rent-burn-percentage")
                 .value_name("NUMBER")
-                .takes_value(true)
-                .default_value(default_rent_burn_percentage)
+                .default_value("50")
                 .help("percentage of collected rent to burn")
-                .validator(is_valid_percentage),
+                .value_parser(|s: &str| is_valid_percentage(s)),
         )
         .arg(
-            Arg::with_name("fee_burn_percentage")
+            Arg::new("fee_burn_percentage")
                 .long("fee-burn-percentage")
                 .value_name("NUMBER")
-                .takes_value(true)
-                .default_value(default_fee_burn_percentage)
+                .default_value("50")
                 .help("percentage of collected fee to burn")
-                .validator(is_valid_percentage),
+                .value_parser(|s: &str| is_valid_percentage(s)),
         )
         .arg(
-            Arg::with_name("vote_commission_percentage")
+            Arg::new("vote_commission_percentage")
                 .long("vote-commission-percentage")
                 .value_name("NUMBER")
-                .takes_value(true)
                 .default_value("100")
                 .help("percentage of vote commission")
-                .validator(is_valid_percentage),
+                .value_parser(|s: &str| is_valid_percentage(s)),
         )
         .arg(
-            Arg::with_name("target_signatures_per_slot")
+            Arg::new("target_signatures_per_slot")
                 .long("target-signatures-per-slot")
                 .value_name("NUMBER")
-                .takes_value(true)
-                .default_value(default_target_signatures_per_slot)
+                .default_value("0")
                 .help(
                     "Used to estimate the desired processing capacity of the cluster. \
                     When the latest slot processes fewer/greater signatures than this \
@@ -478,17 +428,15 @@ fn main() -> Result<(), Box<dyn error::Error>> {
                 ),
         )
         .arg(
-            Arg::with_name("target_tick_duration")
+            Arg::new("target_tick_duration")
                 .long("target-tick-duration")
                 .value_name("MILLIS")
-                .takes_value(true)
                 .help("The target tick rate of the cluster in milliseconds"),
         )
         .arg(
-            Arg::with_name("hashes_per_tick")
+            Arg::new("hashes_per_tick")
                 .long("hashes-per-tick")
                 .value_name("NUM_HASHES|\"auto\"|\"sleep\"")
-                .takes_value(true)
                 .default_value("auto")
                 .help(
                     "How many PoH hashes to roll before emitting the next tick. \
@@ -498,108 +446,97 @@ fn main() -> Result<(), Box<dyn error::Error>> {
                 ),
         )
         .arg(
-            Arg::with_name("ticks_per_slot")
+            Arg::new("ticks_per_slot")
                 .long("ticks-per-slot")
                 .value_name("TICKS")
-                .takes_value(true)
-                .default_value(default_ticks_per_slot)
+                .default_value("64")
                 .help("The number of ticks in a slot"),
         )
         .arg(
-            Arg::with_name("slots_per_epoch")
+            Arg::new("slots_per_epoch")
                 .long("slots-per-epoch")
                 .value_name("SLOTS")
-                .validator(is_slot)
-                .takes_value(true)
+                .value_parser(|s: &str| is_slot(s))
                 .help("The number of slots in an epoch"),
         )
         .arg(
-            Arg::with_name("enable_warmup_epochs")
+            Arg::new("enable_warmup_epochs")
                 .long("enable-warmup-epochs")
+                .action(ArgAction::SetTrue)
                 .help(
                     "When enabled epochs start short and will grow. \
                      Useful for warming up stake quickly during development"
                 ),
         )
         .arg(
-            Arg::with_name("primordial_accounts_file")
+            Arg::new("primordial_accounts_file")
                 .long("primordial-accounts-file")
                 .value_name("FILENAME")
-                .takes_value(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help("The location of pubkey for primordial accounts and balance"),
         )
         .arg(
-            Arg::with_name("validator_accounts_file")
+            Arg::new("validator_accounts_file")
                 .long("validator-accounts-file")
                 .value_name("FILENAME")
-                .takes_value(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .help("The location of a file containing a list of identity, vote, and stake pubkeys and balances for validator accounts to bake into genesis")
         )
         .arg(
-            Arg::with_name("cluster_type")
+            Arg::new("cluster_type")
                 .long("cluster-type")
-                .possible_values(&ClusterType::STRINGS)
-                .takes_value(true)
-                .default_value(default_cluster_type)
+                .value_parser(ClusterType::STRINGS)
+                .default_value("mainnet-beta")
                 .help(
                     "Selects the features that will be enabled for the cluster"
                 ),
         )
         .arg(
-            Arg::with_name("deactivate_feature")
+            Arg::new("deactivate_feature")
                 .long("deactivate-feature")
-                .takes_value(true)
                 .value_name("FEATURE_PUBKEY")
-                .validator(is_pubkey)
-                .multiple(true)
+                .value_parser(|s: &str| is_pubkey(s))
+                .action(ArgAction::Append)
                 .help("Deactivate this feature in genesis. Compatible with --cluster-type development"),
         )
         .arg(
-            Arg::with_name("max_genesis_archive_unpacked_size")
+            Arg::new("max_genesis_archive_unpacked_size")
                 .long("max-genesis-archive-unpacked-size")
                 .value_name("NUMBER")
-                .takes_value(true)
-                .default_value(&default_genesis_archive_unpacked_size)
+                .default_value("10737418240")
                 .help(
                     "maximum total uncompressed file size of created genesis archive",
                 ),
         )
         .arg(
-            Arg::with_name("bpf_program")
+            Arg::new("bpf_program")
                 .long("bpf-program")
                 .value_name("ADDRESS LOADER SBF_PROGRAM.SO")
-                .takes_value(true)
-                .number_of_values(3)
-                .multiple(true)
+                .num_args(3)
+                .action(ArgAction::Append)
                 .help("Install a SBF program at the given address"),
         )
         .arg(
-            Arg::with_name("upgradeable_program")
+            Arg::new("upgradeable_program")
                 .long("upgradeable-program")
                 .value_name("ADDRESS UPGRADEABLE_LOADER SBF_PROGRAM.SO UPGRADE_AUTHORITY")
-                .takes_value(true)
-                .number_of_values(4)
-                .multiple(true)
+                .num_args(4)
+                .action(ArgAction::Append)
                 .help("Install an upgradeable SBF program at the given address with the given upgrade authority (or \"none\")"),
         )
         .arg(
-            Arg::with_name("inflation")
-                .required(false)
+            Arg::new("inflation")
                 .long("inflation")
-                .takes_value(true)
-                .possible_values(&["pico", "full", "none"])
+                .value_parser(["pico", "full", "none"])
                 .help("Selects inflation"),
         )
         .arg(
-            Arg::with_name("json_rpc_url")
-                .short("u")
+            Arg::new("json_rpc_url")
+                .short('u')
                 .long("url")
                 .value_name("URL_OR_MONIKER")
-                .takes_value(true)
                 .global(true)
-                .validator(is_url_or_moniker)
+                .value_parser(|s: &str| is_url_or_moniker(s))
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
                     [mainnet-beta, testnet, devnet, localhost]. Used for cloning \
@@ -608,15 +545,25 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         )
         .get_matches();
 
-    let ledger_path = PathBuf::from(matches.value_of("ledger_path").unwrap());
+    let ledger_path = PathBuf::from(matches.get_one::<String>("ledger_path").unwrap());
 
     let rent = Rent {
-        lamports_per_byte_year: value_t_or_exit!(matches, "lamports_per_byte_year", u64),
-        exemption_threshold: value_t_or_exit!(matches, "rent_exemption_threshold", f64),
-        burn_percent: value_t_or_exit!(matches, "rent_burn_percentage", u8),
+        lamports_per_byte_year: matches.get_one::<String>("lamports_per_byte_year").unwrap().parse::<u64>().unwrap(),
+        exemption_threshold: matches.get_one::<String>("rent_exemption_threshold").unwrap().parse::<f64>().unwrap(),
+        burn_percent: matches.get_one::<String>("rent_burn_percentage").unwrap().parse::<u8>().unwrap(),
     };
 
-    let bootstrap_validator_pubkeys = pubkeys_of(&matches, "bootstrap_validator").unwrap();
+    let bootstrap_validator_pubkeys: Vec<Pubkey> = matches
+        .get_many::<String>("bootstrap_validator")
+        .unwrap()
+        .map(|value| {
+            value.parse::<Pubkey>().unwrap_or_else(|_| {
+                solana_keypair::read_keypair_file(value)
+                    .expect("read_keypair_file failed")
+                    .pubkey()
+            })
+        })
+        .collect();
     assert_eq!(bootstrap_validator_pubkeys.len() % 3, 0);
 
     // Ensure there are no duplicated pubkeys in the --bootstrap-validator list
@@ -630,35 +577,85 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         }
     }
 
-    let bootstrap_validator_lamports =
-        value_t_or_exit!(matches, "bootstrap_validator_lamports", u64);
+    let bootstrap_validator_lamports = matches
+        .get_one::<String>("bootstrap_validator_lamports")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
 
-    let bootstrap_validator_stake_lamports =
-        value_t_or_exit!(matches, "bootstrap_validator_stake_lamports", u64);
+    let bootstrap_validator_stake_lamports = matches
+        .get_one::<String>("bootstrap_validator_stake_lamports")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
 
-    let bootstrap_stake_authorized_pubkey =
-        pubkey_of(&matches, "bootstrap_stake_authorized_pubkey");
-    let faucet_lamports = value_t!(matches, "faucet_lamports", u64).unwrap_or(0);
-    let faucet_pubkey = pubkey_of(&matches, "faucet_pubkey");
+    let bootstrap_stake_authorized_pubkey = matches
+        .get_one::<String>("bootstrap_stake_authorized_pubkey")
+        .map(|value| {
+            value.parse::<Pubkey>().unwrap_or_else(|_| {
+                solana_keypair::read_keypair_file(value)
+                    .expect("read_keypair_file failed")
+                    .pubkey()
+            })
+        });
+    let faucet_lamports = matches
+        .get_one::<String>("faucet_lamports")
+        .map(|v| v.parse::<u64>().unwrap())
+        .unwrap_or(0);
+    let faucet_pubkey = matches
+        .get_one::<String>("faucet_pubkey")
+        .map(|value| {
+            value.parse::<Pubkey>().unwrap_or_else(|_| {
+                solana_keypair::read_keypair_file(value)
+                    .expect("read_keypair_file failed")
+                    .pubkey()
+            })
+        });
 
-    let ticks_per_slot = value_t_or_exit!(matches, "ticks_per_slot", u64);
+    let ticks_per_slot = matches
+        .get_one::<String>("ticks_per_slot")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
 
     let mut fee_rate_governor = FeeRateGovernor::new(
-        value_t_or_exit!(matches, "target_lamports_per_signature", u64),
-        value_t_or_exit!(matches, "target_signatures_per_slot", u64),
+        matches
+            .get_one::<String>("target_lamports_per_signature")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap(),
+        matches
+            .get_one::<String>("target_signatures_per_slot")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap(),
     );
-    fee_rate_governor.burn_percent = value_t_or_exit!(matches, "fee_burn_percentage", u8);
+    fee_rate_governor.burn_percent = matches
+        .get_one::<String>("fee_burn_percentage")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
 
     let mut poh_config = PohConfig {
-        target_tick_duration: if matches.is_present("target_tick_duration") {
-            Duration::from_micros(value_t_or_exit!(matches, "target_tick_duration", u64))
+        target_tick_duration: if matches.contains_id("target_tick_duration") {
+            Duration::from_micros(
+                matches
+                    .get_one::<String>("target_tick_duration")
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap(),
+            )
         } else {
             default_target_tick_duration
         },
         ..PohConfig::default()
     };
 
-    let cluster_type = cluster_type_of(&matches, "cluster_type").unwrap();
+    let cluster_type = matches
+        .get_one::<String>("cluster_type")
+        .unwrap()
+        .parse::<ClusterType>()
+        .unwrap();
 
     // Get the features to deactivate if provided
     let features_to_deactivate = features_to_deactivate_for_cluster(&cluster_type, &matches)
@@ -667,7 +664,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
             std::process::exit(1);
         });
 
-    match matches.value_of("hashes_per_tick").unwrap() {
+    match matches.get_one::<String>("hashes_per_tick").unwrap().as_str() {
         "auto" => match cluster_type {
             ClusterType::Development => {
                 let hashes_per_tick =
@@ -682,12 +679,22 @@ fn main() -> Result<(), Box<dyn error::Error>> {
             poh_config.hashes_per_tick = None;
         }
         _ => {
-            poh_config.hashes_per_tick = Some(value_t_or_exit!(matches, "hashes_per_tick", u64));
+            poh_config.hashes_per_tick = Some(
+                matches
+                    .get_one::<String>("hashes_per_tick")
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap(),
+            );
         }
     }
 
-    let slots_per_epoch = if matches.value_of("slots_per_epoch").is_some() {
-        value_t_or_exit!(matches, "slots_per_epoch", u64)
+    let slots_per_epoch = if matches.contains_id("slots_per_epoch") {
+        matches
+            .get_one::<String>("slots_per_epoch")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
     } else {
         match cluster_type {
             ClusterType::Development => clock::DEFAULT_DEV_SLOTS_PER_EPOCH,
@@ -699,7 +706,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let epoch_schedule = EpochSchedule::custom(
         slots_per_epoch,
         slots_per_epoch,
-        matches.is_present("enable_warmup_epochs"),
+        matches.get_flag("enable_warmup_epochs"),
     );
 
     let mut genesis_config = GenesisConfig {
@@ -713,7 +720,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         ..GenesisConfig::default()
     };
 
-    if let Ok(raw_inflation) = value_t!(matches, "inflation", String) {
+    if let Some(raw_inflation) = matches.get_one::<String>("inflation") {
         let inflation = match raw_inflation.as_str() {
             "pico" => Inflation::pico(),
             "full" => Inflation::full(),
@@ -723,7 +730,11 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         genesis_config.inflation = inflation;
     }
 
-    let commission = value_t_or_exit!(matches, "vote_commission_percentage", u8);
+    let commission = matches
+        .get_one::<String>("vote_commission_percentage")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
     let rent = genesis_config.rent.clone();
 
     add_validator_accounts(
@@ -736,7 +747,13 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         bootstrap_stake_authorized_pubkey.as_ref(),
     )?;
 
-    if let Some(creation_time) = unix_timestamp_from_rfc3339_datetime(&matches, "creation_time") {
+    if let Some(creation_time) = matches
+        .get_one::<String>("creation_time")
+        .and_then(|value| {
+            DateTime::parse_from_rfc3339(value)
+                .ok()
+                .map(|date_time| date_time.timestamp())
+        }) {
         genesis_config.creation_time = creation_time;
     }
 
@@ -756,20 +773,24 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         );
     }
 
-    if let Some(files) = matches.values_of("primordial_accounts_file") {
+    if let Some(files) = matches.get_many::<String>("primordial_accounts_file") {
         for file in files {
             load_genesis_accounts(file, &mut genesis_config)?;
         }
     }
 
-    if let Some(files) = matches.values_of("validator_accounts_file") {
+    if let Some(files) = matches.get_many::<String>("validator_accounts_file") {
         for file in files {
             load_validator_accounts(file, commission, &rent, &mut genesis_config)?;
         }
     }
 
     let max_genesis_archive_unpacked_size =
-        value_t_or_exit!(matches, "max_genesis_archive_unpacked_size", u64);
+        matches
+            .get_one::<String>("max_genesis_archive_unpacked_size")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
 
     let issued_lamports = genesis_config
         .accounts
@@ -797,7 +818,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         program_data
     };
 
-    if let Some(values) = matches.values_of("bpf_program") {
+    if let Some(values) = matches.get_many::<String>("bpf_program") {
         for (address, loader, program) in values.tuples() {
             let address = parse_address(address, "address");
             let loader = parse_address(loader, "loader");
@@ -815,7 +836,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
         }
     }
 
-    if let Some(values) = matches.values_of("upgradeable_program") {
+    if let Some(values) = matches.get_many::<String>("upgradeable_program") {
         for (address, loader, program, upgrade_authority) in values.tuples() {
             let address = parse_address(address, "address");
             let loader = parse_address(loader, "loader");
