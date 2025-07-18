@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate log;
 use {
-    clap::{App, Arg},
+    clap::{Arg, ArgAction, Command},
     rayon::prelude::*,
     solana_accounts_db::{
         accounts::Accounts,
@@ -22,42 +22,54 @@ use {
 fn main() {
     solana_logger::setup();
 
-    let matches = App::new("solana-accounts-bench")
+    let matches = Command::new("solana-accounts-bench")
         .about("Solana accounts benchmark tool")
-        .version(solana_version::version!())
+        .version("3.0.0")
         .arg(
-            Arg::with_name("num_slots")
+            Arg::new("num_slots")
                 .long("num_slots")
-                .takes_value(true)
                 .value_name("SLOTS")
                 .help("Number of slots to store to."),
         )
         .arg(
-            Arg::with_name("num_accounts")
+            Arg::new("num_accounts")
                 .long("num_accounts")
-                .takes_value(true)
                 .value_name("NUM_ACCOUNTS")
                 .help("Total number of accounts"),
         )
         .arg(
-            Arg::with_name("iterations")
+            Arg::new("iterations")
                 .long("iterations")
-                .takes_value(true)
                 .value_name("ITERATIONS")
                 .help("Number of bench iterations"),
         )
         .arg(
-            Arg::with_name("clean")
+            Arg::new("clean")
                 .long("clean")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Run clean"),
         )
         .get_matches();
 
-    let num_slots = matches.value_of("num_slots").unwrap_or("4").parse::<usize>().unwrap();
-    let num_accounts = matches.value_of("num_accounts").unwrap_or("10000").parse::<usize>().unwrap();
-    let iterations = matches.value_of("iterations").unwrap_or("20").parse::<usize>().unwrap();
-    let clean = matches.is_present("clean");
+    let num_slots = matches
+        .get_one::<String>("num_slots")
+        .map(|s| s.as_str())
+        .unwrap_or("4")
+        .parse::<usize>()
+        .unwrap();
+    let num_accounts = matches
+        .get_one::<String>("num_accounts")
+        .map(|s| s.as_str())
+        .unwrap_or("10000")
+        .parse::<usize>()
+        .unwrap();
+    let iterations = matches
+        .get_one::<String>("iterations")
+        .map(|s| s.as_str())
+        .unwrap_or("20")
+        .parse::<usize>()
+        .unwrap();
+    let clean = matches.get_flag("clean");
     println!("clean: {clean:?}");
 
     let path = PathBuf::from(env::var("FARF_DIR").unwrap_or_else(|_| "farf".to_owned()))

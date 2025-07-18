@@ -29,6 +29,28 @@ src/
 └── validator_info.rs                # Validator information parsing
 ```
 
+## What This Crate Does
+- Decodes and serializes Solana account data for UI, RPC, and CLI
+- Supports multiple encoding formats and program-specific parsing
+- Used as the core account parsing engine for Solana tools and services
+
+## Where This Crate Is Imported
+- `cli` (Solana command-line interface)
+- `rpc` (Solana RPC server)
+- `ledger-tool` (Ledger inspection and analysis)
+- `tokens` (Token CLI and utilities)
+- `accounts-cluster-bench` (Cluster benchmarking)
+- `programs/sbf` (SBF program utilities)
+- `rpc-client` (RPC client utilities)
+- Any crate that needs to parse or display Solana account data
+
+## What This Crate Imports
+- `solana-account-decoder-client-types` (UI/account types)
+- `solana-account` (account data structures)
+- `solana-pubkey` (public key handling)
+- `solana-instruction` (instruction parsing)
+- `solana-clock`, `solana-fee-calculator`, `solana-program-pack`, `solana-program-option`, `solana-rent`, `solana-sysvar`, `solana-vote-interface`, `solana-stake-interface`, `solana-loader-v3-interface`, `solana-config-program-client`, `solana-address-lookup-table-interface`, `spl-token`, `spl-token-2022`, `spl-token-group-interface`, `spl-token-metadata-interface`, `spl-generic-token`, `bv`, `serde`, `base64`, `bs58`, `zstd`, `Inflector`, `thiserror`
+
 ## Key Components
 
 ### Core Functions
@@ -55,22 +77,6 @@ src/
 - **BPF Loader**: Program deployment accounts
 - **Address Lookup Tables**: Address resolution tables
 - **Sysvars**: System variables and constants
-
-## Dependencies
-
-### Internal Dependencies
-- `solana-account-decoder-client-types`: Client-side types for account decoding
-- `solana-account`: Account data structures
-- `solana-pubkey`: Public key handling
-- `solana-instruction`: Instruction parsing
-- Various Solana program interfaces (stake, vote, token, etc.)
-
-### External Dependencies
-- `serde`: Serialization/deserialization
-- `base64`: Base64 encoding
-- `bs58`: Base58 encoding
-- `zstd`: Data compression
-- `bv`: Bit vector operations
 
 ## Usage
 

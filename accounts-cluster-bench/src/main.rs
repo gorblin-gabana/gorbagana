@@ -1,11 +1,11 @@
 #![allow(clippy::arithmetic_side_effects)]
 use {
-    clap::{crate_description, crate_name, value_t, values_t, values_t_or_exit, App, Arg},
+    clap::{Arg, ArgAction, Command},
     log::*,
     rand::{thread_rng, Rng},
     rayon::prelude::*,
     solana_clap_utils::{
-        hidden_unless_forced, input_parsers::pubkey_of, input_validators::is_url_or_moniker,
+        hidden_unless_forced, input_validators::is_url_or_moniker,
     },
     solana_cli_config::{ConfigInput, CONFIG_FILE},
     solana_client::{
@@ -1125,29 +1125,27 @@ fn run_accounts_bench(
 
 fn main() {
     solana_logger::setup_with_default("solana=info");
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .version("3.0.0")
         .arg({
-            let arg = Arg::with_name("config_file")
-                .short("C")
+            let arg = Arg::new("config_file")
+                .short('C')
                 .long("config")
                 .value_name("FILEPATH")
-                .takes_value(true)
                 .help("Configuration file to use");
             if let Some(ref config_file) = *CONFIG_FILE {
-                arg.default_value(config_file)
+                arg.default_value(config_file.as_str())
             } else {
                 arg
             }
         })
         .arg(
-            Arg::with_name("json_rpc_url")
-                .short("u")
+            Arg::new("json_rpc_url")
+                .short('u')
                 .long("url")
                 .value_name("URL_OR_MONIKER")
-                .takes_value(true)
-                .validator(is_url_or_moniker)
+                .value_parser(|s: &str| is_url_or_moniker(s.to_string()))
                 .conflicts_with("entrypoint")
                 .help(
                     "URL for Solana's JSON RPC or moniker (or their first letter): \
@@ -1155,55 +1153,48 @@ fn main() {
                 ),
         )
         .arg(
-            Arg::with_name("entrypoint")
+            Arg::new("entrypoint")
                 .long("entrypoint")
-                .takes_value(true)
                 .value_name("HOST:PORT")
                 .conflicts_with("json_rpc_url")
                 .help("RPC entrypoint address. Usually <ip>:8899"),
         )
         .arg(
-            Arg::with_name("faucet_addr")
+            Arg::new("faucet_addr")
                 .long("faucet")
-                .takes_value(true)
                 .value_name("HOST:PORT")
-                .hidden(hidden_unless_forced())
+                .hide(hidden_unless_forced())
                 .help("Faucet entrypoint address. Usually <ip>:9900"),
         )
         .arg(
-            Arg::with_name("space")
+            Arg::new("space")
                 .long("space")
-                .takes_value(true)
                 .value_name("BYTES")
                 .conflicts_with("mint")
                 .help("Size of accounts to create"),
         )
         .arg(
-            Arg::with_name("lamports")
+            Arg::new("lamports")
                 .long("lamports")
-                .takes_value(true)
                 .value_name("LAMPORTS")
                 .help("How many lamports to fund each account"),
         )
         .arg(
-            Arg::with_name("identity")
+            Arg::new("identity")
                 .long("identity")
-                .takes_value(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .value_name("FILE")
                 .help("keypair file"),
         )
         .arg(
-            Arg::with_name("batch_size")
+            Arg::new("batch_size")
                 .long("batch-size")
-                .takes_value(true)
                 .value_name("BYTES")
                 .help("Number of transactions to send per batch"),
         )
         .arg(
-            Arg::with_name("close_nth_batch")
+            Arg::new("close_nth_batch")
                 .long("close-frequency")
-                .takes_value(true)
                 .value_name("BYTES")
                 .help(
                     "Every `n` batches, create a batch of close transactions for \
@@ -1214,66 +1205,60 @@ fn main() {
                 ),
         )
         .arg(
-            Arg::with_name("num_instructions")
+            Arg::new("num_instructions")
                 .long("num-instructions")
-                .takes_value(true)
                 .value_name("NUM_INSTRUCTIONS")
                 .help("Number of accounts to create on each transaction"),
         )
         .arg(
-            Arg::with_name("iterations")
+            Arg::new("iterations")
                 .long("iterations")
-                .takes_value(true)
                 .value_name("NUM_ITERATIONS")
                 .help("Number of iterations to make. 0 = unlimited iterations."),
         )
         .arg(
-            Arg::with_name("max_accounts")
+            Arg::new("max_accounts")
                 .long("max-accounts")
-                .takes_value(true)
                 .value_name("NUM_ACCOUNTS")
                 .help("Halt after client has created this number of accounts. Does not count closed accounts."),
         )
         .arg(
-            Arg::with_name("check_gossip")
+            Arg::new("check_gossip")
                 .long("check-gossip")
+                .action(ArgAction::SetTrue)
                 .help("Just use entrypoint address directly"),
         )
         .arg(
-            Arg::with_name("shred_version")
+            Arg::new("shred_version")
                 .long("shred-version")
-                .takes_value(true)
                 .value_name("VERSION")
                 .requires("check_gossip")
                 .help("The shred version to use for gossip discovery"),
         )
         .arg(
-            Arg::with_name("mint")
+            Arg::new("mint")
                 .long("mint")
-                .takes_value(true)
                 .value_name("MINT_ADDRESS")
                 .help("Mint address to initialize account"),
         )
         .arg(
-            Arg::with_name("reclaim_accounts")
+            Arg::new("reclaim_accounts")
                 .long("reclaim-accounts")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Reclaim accounts after session ends; incompatible with --iterations 0"),
         )
         .arg(
-            Arg::with_name("num_rpc_bench_threads")
+            Arg::new("num_rpc_bench_threads")
                 .long("num-rpc-bench-threads")
-                .takes_value(true)
                 .value_name("NUM_THREADS")
                 .help("Spawn this many RPC benching threads for each type passed by --rpc-bench"),
         )
         .arg(
-            Arg::with_name("rpc_bench")
+            Arg::new("rpc_bench")
                 .long("rpc-bench")
-                .takes_value(true)
                 .value_name("RPC_BENCH_TYPE(S)")
-                .multiple(true)
-                .requires_ifs(&[
+                .action(ArgAction::Append)
+                .requires_ifs([
                     ("supply", "mint"),
                     ("token-accounts-by-owner", "mint"),
                 ])
@@ -1281,36 +1266,59 @@ fn main() {
         )
         .get_matches();
 
-    let skip_gossip = !matches.is_present("check_gossip");
-    let space = value_t!(matches, "space", u64).ok();
-    let lamports = value_t!(matches, "lamports", u64).ok();
-    let batch_size = value_t!(matches, "batch_size", usize).unwrap_or(4);
-    let close_nth_batch = value_t!(matches, "close_nth_batch", u64).unwrap_or(0);
-    let iterations = value_t!(matches, "iterations", usize).unwrap_or(10);
-    let max_accounts = value_t!(matches, "max_accounts", usize).ok();
-    let num_instructions = value_t!(matches, "num_instructions", usize).unwrap_or(1);
+    let skip_gossip = !matches.get_flag("check_gossip");
+    let space = matches
+        .get_one::<String>("space")
+        .and_then(|s| s.parse::<u64>().ok());
+    let lamports = matches
+        .get_one::<String>("lamports")
+        .and_then(|s| s.parse::<u64>().ok());
+    let batch_size = matches
+        .get_one::<String>("batch_size")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(4);
+    let close_nth_batch = matches
+        .get_one::<String>("close_nth_batch")
+        .map(|s| s.parse::<u64>().unwrap())
+        .unwrap_or(0);
+    let iterations = matches
+        .get_one::<String>("iterations")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(10);
+    let max_accounts = matches
+        .get_one::<String>("max_accounts")
+        .and_then(|s| s.parse::<usize>().ok());
+    let num_instructions = matches
+        .get_one::<String>("num_instructions")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(1);
     if num_instructions == 0 || num_instructions > 500 {
         eprintln!("bad num_instructions: {num_instructions}");
         exit(1);
     }
-    let rpc_benches = values_t!(matches, "rpc_bench", String)
+    let rpc_benches = matches
+        .get_many::<String>("rpc_bench")
         .map(|benches| {
             benches
-                .into_iter()
-                .map(|bench| RpcBench::from_str(&bench).unwrap())
+                .map(|bench| RpcBench::from_str(bench).unwrap())
                 .collect()
-        })
-        .ok();
+        });
     let num_rpc_bench_threads = if rpc_benches.is_none() {
         0
     } else {
-        value_t!(matches, "num_rpc_bench_threads", usize).unwrap_or(1)
+        matches
+            .get_one::<String>("num_rpc_bench_threads")
+            .map(|s| s.parse::<usize>().unwrap())
+            .unwrap_or(1)
     };
 
-    let mint = pubkey_of(&matches, "mint");
+    let mint = matches
+        .get_one::<String>("mint")
+        .map(|s| s.parse::<Pubkey>().unwrap());
 
-    let payer_keypairs: Vec<_> = values_t_or_exit!(matches, "identity", String)
-        .iter()
+    let payer_keypairs: Vec<_> = matches
+        .get_many::<String>("identity")
+        .unwrap()
         .map(|keypair_string| {
             read_keypair_file(keypair_string)
                 .unwrap_or_else(|_| panic!("bad keypair {keypair_string:?}"))
@@ -1321,14 +1329,14 @@ fn main() {
         payer_keypair_refs.push(keypair);
     }
 
-    let client = if let Some(addr) = matches.value_of("entrypoint") {
+    let client = if let Some(addr) = matches.get_one::<String>("entrypoint") {
         let entrypoint_addr = solana_net_utils::parse_host_port(addr).unwrap_or_else(|e| {
             eprintln!("failed to parse entrypoint address: {e}");
             exit(1)
         });
         let shred_version: Option<u16> = if !skip_gossip {
-            if let Ok(version) = value_t!(matches, "shred_version", u16) {
-                Some(version)
+            if let Some(version_str) = matches.get_one::<String>("shred_version") {
+                Some(version_str.parse::<u16>().unwrap())
             } else {
                 Some(
                     solana_net_utils::get_cluster_shred_version(&entrypoint_addr).unwrap_or_else(
@@ -1373,13 +1381,13 @@ fn main() {
             CommitmentConfig::confirmed(),
         ))
     } else {
-        let config = if let Some(config_file) = matches.value_of("config_file") {
+        let config = if let Some(config_file) = matches.get_one::<String>("config_file") {
             solana_cli_config::Config::load(config_file).unwrap_or_default()
         } else {
             solana_cli_config::Config::default()
         };
         let (_, json_rpc_url) = ConfigInput::compute_json_rpc_url_setting(
-            matches.value_of("json_rpc_url").unwrap_or(""),
+            matches.get_one::<String>("json_rpc_url").map(String::as_str).unwrap_or(""),
             &config.json_rpc_url,
         );
         Arc::new(RpcClient::new_with_commitment(
@@ -1399,7 +1407,7 @@ fn main() {
         num_instructions,
         max_accounts,
         mint,
-        matches.is_present("reclaim_accounts"),
+        matches.get_flag("reclaim_accounts"),
         rpc_benches,
         num_rpc_bench_threads,
     );

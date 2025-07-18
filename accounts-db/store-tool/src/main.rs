@@ -1,7 +1,7 @@
 use {
     ahash::HashSet,
     clap::{
-        App, AppSettings, Arg, ArgMatches, SubCommand,
+        Arg, ArgAction, ArgMatches, Command,
     },
     rayon::prelude::*,
     solana_account::ReadableAccount,
@@ -20,17 +20,17 @@ const CMD_INSPECT: &str = "inspect";
 const CMD_SEARCH: &str = "search";
 
 fn main() {
-    let matches = App::new("agave-store-tool")
+    let matches = Command::new("agave-store-tool")
         .about("Tool for account storage files")
-        .version(solana_version::version!())
+        .version("3.0.0")
         .subcommand_required(true)
         .subcommand(
-            SubCommand::with_name(CMD_INSPECT)
+            Command::new(CMD_INSPECT)
                 .about("Inspects an account storage file and display each account's information")
                 .arg(
                     Arg::new("path")
                         .index(1)
-                        
+                        .required(true)
                         .value_name("PATH")
                         .help("Account storage file to inspect"),
                 )
@@ -38,24 +38,24 @@ fn main() {
                     Arg::new("verbose")
                         .short('v')
                         .long("verbose")
-                        
+                        .action(ArgAction::SetTrue)
                         .help("Show additional account information"),
                 ),
         )
         .subcommand(
-            SubCommand::with_name(CMD_SEARCH)
+            Command::new(CMD_SEARCH)
                 .about("Searches for accounts")
                 .arg(
                     Arg::new("path")
                         .index(1)
-                        
+                        .required(true)
                         .value_name("PATH")
                         .help("Account storage directory to search"),
                 )
                 .arg(
                     Arg::new("addresses")
                         .index(2)
-                        
+                        .required(true)
                         .value_name("PUBKEYS")
                         .value_delimiter(',')
                         .help("Search for the entries of one or more pubkeys, delimited by commas"),
@@ -64,7 +64,7 @@ fn main() {
                     Arg::new("verbose")
                         .short('v')
                         .long("verbose")
-                        
+                        .action(ArgAction::SetTrue)
                         .help("Show additional account information"),
                 ),
         )
@@ -87,8 +87,8 @@ fn cmd_inspect(
     _app_matches: &ArgMatches,
     subcommand_matches: &ArgMatches,
 ) -> Result<(), String> {
-    let path = subcommand_matches.value_of("path").unwrap().to_string();
-    let verbose = subcommand_matches.is_present("verbose");
+    let path = subcommand_matches.get_one::<String>("path").unwrap().to_string();
+    let verbose = subcommand_matches.get_flag("verbose");
     do_inspect(path, verbose)
 }
 
@@ -96,10 +96,10 @@ fn cmd_search(
     _app_matches: &ArgMatches,
     subcommand_matches: &ArgMatches,
 ) -> Result<(), String> {
-    let path = subcommand_matches.value_of("path").unwrap().to_string();
-    let addresses: Vec<Pubkey> = subcommand_matches.values_of("addresses").unwrap().map(|s| s.parse().unwrap()).collect();
+    let path = subcommand_matches.get_one::<String>("path").unwrap().to_string();
+    let addresses: Vec<Pubkey> = subcommand_matches.get_many::<String>("addresses").unwrap().map(|s| s.parse().unwrap()).collect();
     let addresses = HashSet::from_iter(addresses);
-    let verbose = subcommand_matches.is_present("verbose");
+    let verbose = subcommand_matches.get_flag("verbose");
     do_search(path, addresses, verbose)
 }
 

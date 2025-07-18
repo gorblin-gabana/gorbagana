@@ -56,6 +56,31 @@ accounts-db/
 └── store-tool/                       # Storage tool
 ```
 
+## What This Crate Does
+- Provides the persistent, concurrent, and high-performance storage engine for all Solana account data
+- Supports snapshots, caching, garbage collection, and efficient querying
+- Used as the core state management engine for the validator, runtime, and RPC
+
+## Where This Crate Is Imported
+- `validator` (main validator implementation)
+- `runtime` (transaction execution engine)
+- `rpc` (account query interface)
+- `ledger-tool` (ledger inspection and analysis)
+- `accounts-bench` (accounts database benchmarking)
+- `accounts-cluster-bench` (cluster benchmarking)
+- `programs/sbf` (SBF program utilities)
+- `genesis` (genesis block creation)
+- Any crate that needs to access or manage Solana account state
+
+## What This Crate Imports
+- `solana-account` (account data structures)
+- `solana-pubkey` (public key handling)
+- `solana-hash` (hash functions)
+- `solana-transaction` (transaction processing)
+- `solana-metrics` (performance metrics)
+- `solana-bucket-map` (high-performance hash map)
+- `memmap2`, `crossbeam-channel`, `rayon`, `dashmap`, `ahash`, `bincode`, `serde`, `log`, `rand`, `itertools`, `lz4`, `bzip2`, `num_cpus`, `seqlock`, `smallvec`, `indexmap`, `bytemuck`, `modular-bitfield`, `slab`, `blake3`, `bv`, `bytemuck_derive`, `qualifier_attr` (optional), and more
+
 ## Key Components
 
 ### Core Database (`accounts_db.rs`)
@@ -108,24 +133,6 @@ accounts-db/
 - **Error Recovery**: Robust error handling and recovery
 - **Data Validation**: Account data integrity checks
 - **Backup Support**: Support for backup and restore
-
-## Dependencies
-
-### Internal Dependencies
-- `solana-account`: Account data structures
-- `solana-pubkey`: Public key handling
-- `solana-hash`: Hash functions
-- `solana-transaction`: Transaction processing
-- `solana-metrics`: Performance metrics
-- `solana-bucket-map`: High-performance hash map
-
-### External Dependencies
-- `memmap2`: Memory mapping
-- `crossbeam-channel`: Inter-thread communication
-- `rayon`: Parallel processing
-- `dashmap`: Concurrent hash map
-- `ahash`: High-performance hashing
-- `bincode`: Binary serialization
 
 ## Usage
 
