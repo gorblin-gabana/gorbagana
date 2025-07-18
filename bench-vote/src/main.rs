@@ -1,9 +1,9 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use {
-    clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg},
+    clap::{Arg, ArgAction, Command},
     crossbeam_channel::unbounded,
-    solana_clap_utils::{input_parsers::keypair_of, input_validators::is_keypair_or_ask_keyword},
+    solana_clap_utils::input_validators::is_keypair_or_ask_keyword,
     solana_client::connection_cache::ConnectionCache,
     solana_connection_cache::client_connection::ClientConnection,
     solana_hash::Hash,
@@ -73,99 +73,90 @@ fn sink(
 const TRANSACTIONS_PER_THREAD: u64 = 1_000_000; // Number of transactions per thread
 
 fn main() -> Result<()> {
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .version("3.0.0")
         .arg(
-            Arg::with_name("identity")
+            Arg::new("identity")
                 .short('i')
                 .long("identity")
                 .value_name("KEYPAIR")
-                .takes_value(true)
-                .validator(|arg| is_keypair_or_ask_keyword(arg))
+                .value_parser(|arg: &str| is_keypair_or_ask_keyword(arg.to_string()))
                 .help("Identity keypair for the QUIC endpoint. If it is not specified a random key is created."),
         )
         .arg(
-            Arg::with_name("num-recv-sockets")
+            Arg::new("num-recv-sockets")
                 .long("num-recv-sockets")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Use NUM receive sockets"),
         )
         .arg(
-            Arg::with_name("num-producers")
+            Arg::new("num-producers")
                 .long("num-producers")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Use this many producer threads."),
         )
         .arg(
-            Arg::with_name("max-connections")
+            Arg::new("max-connections")
                 .long("max-connections")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Maximum concurrent client connections allowed on the server side."),
         )
         .arg(
-            Arg::with_name("max-connections-per-peer")
+            Arg::new("max-connections-per-peer")
                 .long("max-connections-per-peer")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Maximum concurrent client connections per peer allowed on the server side."),
         )
         .arg(
-            Arg::with_name("max-connections-per-ipaddr-per-min")
+            Arg::new("max-connections-per-ipaddr-per-min")
                 .long("max-connections-per-ipaddr-per-min")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Maximum client connections per ipaddr per minute allowed on the server side."),
         )
         .arg(
-            Arg::with_name("connection-pool-size")
+            Arg::new("connection-pool-size")
                 .long("connection-pool-size")
                 .value_name("NUM")
-                .takes_value(true)
                 .help("Maximum concurrent client connections on the client side."),
         )
         .arg(
-            Arg::with_name("server-only")
+            Arg::new("server-only")
                 .long("server-only")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Run the bench tool as a server only."),
         )
         .arg(
-            Arg::with_name("client-only")
+            Arg::new("client-only")
                 .long("client-only")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .requires("server-address")
                 .help("Run the bench tool as a client only."),
         )
         .arg(
-            Arg::with_name("server-address")
+            Arg::new("server-address")
                 .short('n')
                 .long("server-address")
                 .value_name("HOST:PORT")
-                .takes_value(true)
-                .validator(|arg| solana_net_utils::is_host_port(arg.to_string()))
+                .value_parser(|arg: &str| solana_net_utils::is_host_port(arg.to_string()))
                 .help("The destination streamer address to which the client will send transactions to"),
         )
         .arg(
-            Arg::with_name("use-connection-cache")
+            Arg::new("use-connection-cache")
                 .long("use-connection-cache")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Use this many producer threads."),
         )
         .arg(
-            Arg::with_name("verbose")
+            Arg::new("verbose")
                 .long("verbose")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Show verbose messages."),
         )
         .arg(
-            Arg::with_name("use-quic")
+            Arg::new("use-quic")
                 .long("use-quic")
                 .value_name("Boolean")
-                .takes_value(true)
                 .default_value("false")
                 .help("Controls if to use QUIC for sending/receiving vote transactions."),
         )
@@ -174,30 +165,45 @@ fn main() -> Result<()> {
     solana_logger::setup();
 
     let mut num_sockets = 1usize;
-    if let Some(n) = matches.value_of("num-recv-sockets") {
-        num_sockets = max(num_sockets, n.to_string().parse().expect("integer"));
+    if let Some(n) = matches.get_one::<String>("num-recv-sockets") {
+        num_sockets = max(num_sockets, n.parse().expect("integer"));
     }
 
-    let vote_use_quic = value_t_or_exit!(matches, "use-quic", bool);
-    let num_producers: u64 = value_t!(matches, "num-producers", u64).unwrap_or(4);
+    let vote_use_quic = matches
+        .get_one::<String>("use-quic")
+        .unwrap()
+        .parse::<bool>()
+        .unwrap();
+    let num_producers: u64 = matches
+        .get_one::<String>("num-producers")
+        .map(|s| s.parse::<u64>().unwrap())
+        .unwrap_or(4);
 
-    let max_connections: usize =
-        value_t!(matches, "max-connections", usize).unwrap_or(DEFAULT_MAX_STAKED_CONNECTIONS);
-    let max_connections_per_peer: usize = value_t!(matches, "max-connections-per-peer", usize)
+    let max_connections: usize = matches
+        .get_one::<String>("max-connections")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(DEFAULT_MAX_STAKED_CONNECTIONS);
+    let max_connections_per_peer: usize = matches
+        .get_one::<String>("max-connections-per-peer")
+        .map(|s| s.parse::<usize>().unwrap())
         .unwrap_or(DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER);
-    let max_connections_per_ipaddr_per_min: usize =
-        value_t!(matches, "max-connections-per-ipaddr-per-min", usize).unwrap_or(1024); // Default value for max connections per ipaddr per minute
-    let connection_pool_size: usize =
-        value_t!(matches, "connection-pool-size", usize).unwrap_or(256);
+    let max_connections_per_ipaddr_per_min: usize = matches
+        .get_one::<String>("max-connections-per-ipaddr-per-min")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(1024); // Default value for max connections per ipaddr per minute
+    let connection_pool_size: usize = matches
+        .get_one::<String>("connection-pool-size")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(256);
 
-    let use_connection_cache = matches.is_present("use-connection-cache");
-    let server_only = matches.is_present("server-only");
-    let client_only = matches.is_present("client-only");
-    let verbose = matches.is_present("verbose");
+    let use_connection_cache = matches.get_flag("use-connection-cache");
+    let server_only = matches.get_flag("server-only");
+    let client_only = matches.get_flag("client-only");
+    let verbose = matches.get_flag("verbose");
 
-    let destination = matches.is_present("server-address").then(|| {
+    let destination = matches.contains_id("server-address").then(|| {
         let addr = matches
-            .value_of("server-address")
+            .get_one::<String>("server-address")
             .expect("Server address must be set when --client-only is used");
         solana_net_utils::parse_host_port(addr).expect("Expecting a valid server address")
     });
@@ -206,7 +212,9 @@ fn main() -> Result<()> {
     let ip_addr = destination.map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |addr| addr.ip());
 
     let quic_params = vote_use_quic.then(|| {
-        let identity_keypair = keypair_of(&matches, "identity")
+        let identity_keypair = matches
+            .get_one::<String>("identity")
+            .map(|s| solana_keypair::read_keypair_file(s).unwrap())
             .or_else(|| {
                 println!("--identity is not specified, will generate a key dynamically.");
                 Some(Keypair::new())

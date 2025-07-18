@@ -9259,6 +9259,7 @@ dependencies = [
  "agave-feature-set 3.0.0",
  "base64 0.22.1",
  "bincode",
+ "chrono",
  "clap 4.5.41",
  "itertools 0.12.1",
  "serde",

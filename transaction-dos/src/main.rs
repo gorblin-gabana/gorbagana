@@ -1,11 +1,10 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use {
-    clap::{crate_description, crate_name, value_t, values_t_or_exit, App, Arg},
+    clap::{Arg, ArgAction, Command},
     log::*,
     rand::{thread_rng, Rng},
-    rayon::prelude::*,
-    solana_clap_utils::input_parsers::pubkey_of,
+        rayon::prelude::*,
     solana_cli::{
         cli::{process_command, CliCommand, CliConfig},
         program::ProgramCliCommand,
@@ -429,134 +428,122 @@ fn run_transactions_dos(
 
 fn main() {
     solana_logger::setup_with_default_filter();
-    let matches = App::new(crate_name!())
-        .about(crate_description!())
-        .version(solana_version::version!())
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .version("3.0.0")
         .arg(
-            Arg::with_name("entrypoint")
+            Arg::new("entrypoint")
                 .long("entrypoint")
-                .takes_value(true)
                 .value_name("HOST:PORT")
                 .help("RPC entrypoint address. Usually <ip>:8899"),
         )
         .arg(
-            Arg::with_name("faucet_addr")
+            Arg::new("faucet_addr")
                 .long("faucet")
-                .takes_value(true)
                 .value_name("HOST:PORT")
                 .help("Faucet entrypoint address. Usually <ip>:9900"),
         )
         .arg(
-            Arg::with_name("space")
+            Arg::new("space")
                 .long("space")
-                .takes_value(true)
                 .value_name("BYTES")
                 .help("Size of accounts to create"),
         )
         .arg(
-            Arg::with_name("lamports")
+            Arg::new("lamports")
                 .long("lamports")
-                .takes_value(true)
                 .value_name("LAMPORTS")
                 .help("How many lamports to fund each account"),
         )
         .arg(
-            Arg::with_name("payer")
+            Arg::new("payer")
                 .long("payer")
-                .takes_value(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .value_name("FILE")
                 .help("One or more payer keypairs to fund account creation."),
         )
         .arg(
-            Arg::with_name("account")
+            Arg::new("account")
                 .long("account")
-                .takes_value(true)
-                .multiple(true)
+                .action(ArgAction::Append)
                 .value_name("FILE")
                 .help("One or more keypairs to create accounts owned by the program and which the program will write to."),
         )
         .arg(
-            Arg::with_name("account_groups")
+            Arg::new("account_groups")
             .long("account_groups")
-            .takes_value(true)
             .value_name("NUM")
             .help("Number of groups of accounts to split the accounts into")
         )
         .arg(
-            Arg::with_name("batch_size")
+            Arg::new("batch_size")
                 .long("batch-size")
-                .takes_value(true)
                 .value_name("NUM")
                 .help("Number of transactions to send per batch"),
         )
         .arg(
-            Arg::with_name("num_instructions")
+            Arg::new("num_instructions")
                 .long("num-instructions")
-                .takes_value(true)
                 .value_name("NUM")
                 .help("Number of accounts to create on each transaction"),
         )
         .arg(
-            Arg::with_name("num_program_iterations")
+            Arg::new("num_program_iterations")
                 .long("num-program-iterations")
-                .takes_value(true)
                 .value_name("NUM")
                 .help("Number of iterations in the smart contract"),
         )
         .arg(
-            Arg::with_name("iterations")
+            Arg::new("iterations")
                 .long("iterations")
-                .takes_value(true)
                 .value_name("NUM")
                 .help("Number of iterations to make"),
         )
         .arg(
-            Arg::with_name("batch_sleep_ms")
+            Arg::new("batch_sleep_ms")
                 .long("batch-sleep-ms")
-                .takes_value(true)
                 .value_name("NUM")
                 .help("Sleep for this long the num outstanding transactions is greater than the batch size."),
         )
         .arg(
-            Arg::with_name("check_gossip")
+            Arg::new("check_gossip")
                 .long("check-gossip")
+                .action(ArgAction::SetTrue)
                 .help("Just use entrypoint address directly"),
         )
         .arg(
-            Arg::with_name("shred_version")
+            Arg::new("shred_version")
                 .long("shred-version")
-                .takes_value(true)
                 .value_name("VERSION")
                 .requires("check_gossip")
                 .help("The shred version to use for node discovery"),
         )
         .arg(
-            Arg::with_name("just_calculate_fees")
+            Arg::new("just_calculate_fees")
                 .long("just-calculate-fees")
+                .action(ArgAction::SetTrue)
                 .help("Just print the necessary fees and exit"),
         )
         .arg(
-            Arg::with_name("program_id")
+            Arg::new("program_id")
                 .long("program-id")
-                .takes_value(true)
                 .required(true)
                 .help("program_id address to initialize account"),
         )
         .get_matches();
 
-    let skip_gossip = !matches.is_present("check_gossip");
+    let skip_gossip = !matches.get_flag("check_gossip");
     let port = if skip_gossip { 8899 } else { 8001 };
     let mut entrypoint_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    if let Some(addr) = matches.value_of("entrypoint") {
+    if let Some(addr) = matches.get_one::<String>("entrypoint") {
         entrypoint_addr = solana_net_utils::parse_host_port(addr).unwrap_or_else(|e| {
             eprintln!("failed to parse entrypoint address: {e}");
             exit(1)
         });
     }
     let shred_version: Option<u16> = if !skip_gossip {
-        if let Ok(version) = value_t!(matches, "shred_version", u16) {
-            Some(version)
+        if let Some(version_str) = matches.get_one::<String>("shred_version") {
+            Some(version_str.parse::<u16>().unwrap())
         } else {
             Some(
                 solana_net_utils::get_cluster_shred_version(&entrypoint_addr).unwrap_or_else(
@@ -571,46 +558,73 @@ fn main() {
         None
     };
 
-    let just_calculate_fees = matches.is_present("just_calculate_fees");
+    let just_calculate_fees = matches.get_flag("just_calculate_fees");
     let mut faucet_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, FAUCET_PORT));
-    if let Some(addr) = matches.value_of("faucet_addr") {
+    if let Some(addr) = matches.get_one::<String>("faucet_addr") {
         faucet_addr = solana_net_utils::parse_host_port(addr).unwrap_or_else(|e| {
             eprintln!("failed to parse entrypoint address: {e}");
             exit(1)
         });
     }
 
-    let space = value_t!(matches, "space", u64).ok();
-    let lamports = value_t!(matches, "lamports", u64).ok();
-    let batch_size = value_t!(matches, "batch_size", usize).unwrap_or(4);
-    let iterations = value_t!(matches, "iterations", usize).unwrap_or(10);
-    let num_program_iterations = value_t!(matches, "num_program_iterations", usize).unwrap_or(10);
-    let num_instructions = value_t!(matches, "num_instructions", usize).unwrap_or(1);
+    let space = matches
+        .get_one::<String>("space")
+        .and_then(|s| s.parse::<u64>().ok());
+    let lamports = matches
+        .get_one::<String>("lamports")
+        .and_then(|s| s.parse::<u64>().ok());
+    let batch_size = matches
+        .get_one::<String>("batch_size")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(4);
+    let iterations = matches
+        .get_one::<String>("iterations")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(10);
+    let num_program_iterations = matches
+        .get_one::<String>("num_program_iterations")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(10);
+    let num_instructions = matches
+        .get_one::<String>("num_instructions")
+        .map(|s| s.parse::<usize>().unwrap())
+        .unwrap_or(1);
     if num_instructions == 0 || num_instructions > 500 {
         eprintln!("bad num_instructions: {num_instructions}");
         exit(1);
     }
-    let batch_sleep_ms = value_t!(matches, "batch_sleep_ms", u64).unwrap_or(500);
+    let batch_sleep_ms = matches
+        .get_one::<String>("batch_sleep_ms")
+        .map(|s| s.parse::<u64>().unwrap())
+        .unwrap_or(500);
 
-    let program_id = pubkey_of(&matches, "program_id").unwrap();
+    let program_id = matches
+        .get_one::<String>("program_id")
+        .unwrap()
+        .parse::<Pubkey>()
+        .unwrap();
 
-    let payer_keypairs: Vec<_> = values_t_or_exit!(matches, "payer", String)
-        .iter()
+    let payer_keypairs: Vec<_> = matches
+        .get_many::<String>("payer")
+        .unwrap()
         .map(|keypair_string| {
             read_keypair_file(keypair_string)
                 .unwrap_or_else(|_| panic!("bad keypair {keypair_string:?}"))
         })
         .collect();
 
-    let account_keypairs: Vec<_> = values_t_or_exit!(matches, "account", String)
-        .iter()
+    let account_keypairs: Vec<_> = matches
+        .get_many::<String>("account")
+        .unwrap()
         .map(|keypair_string| {
             read_keypair_file(keypair_string)
                 .unwrap_or_else(|_| panic!("bad keypair {keypair_string:?}"))
         })
         .collect();
 
-    let account_groups = value_t!(matches, "account_groups", usize).ok();
+    let account_groups = matches
+        .get_one::<String>("account_groups")
+        .and_then(|s| s.parse::<usize>().ok());
     let payer_keypair_refs: Vec<&Keypair> = payer_keypairs.iter().collect();
     let account_keypair_refs: Vec<&Keypair> = account_keypairs.iter().collect();
 
