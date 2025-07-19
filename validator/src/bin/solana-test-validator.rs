@@ -1,6 +1,7 @@
 use {
     gorb_validator::{
-        admin_rpc_service, cli, ledger_cleanup_service, tpu_client_next, validator_config,
+        admin_rpc_service, cli, dashboard::Dashboard, ledger_lockfile, lock_ledger,
+        println_name_value,
     },
     clap::crate_name,
     // Remove value_t, value_t_or_exit, values_t_or_exit - these don't exist in clap v4
@@ -10,7 +11,7 @@ use {
     solana_account::AccountSharedData,
     solana_accounts_db::accounts_index::{AccountIndex, AccountSecondaryIndexes},
     solana_clap_utils::{
-        input_parsers::{pubkey_of, pubkeys_of, value_of},
+        input_parsers::parse_cpu_ranges,
         input_validators::normalize_to_url_if_moniker,
     },
     solana_clock::Slot,
@@ -67,9 +68,9 @@ fn main() {
     let reset_ledger = matches.get_flag("reset");
 
     let indexes: HashSet<AccountIndex> = matches
-        .values_of("account_indexes")
+        .get_many::<String>("account_indexes")
         .unwrap_or_default()
-        .map(|value| match value {
+        .map(|value| match value.as_str() {
             "program-id" => AccountIndex::ProgramId,
             "spl-token-mint" => AccountIndex::SplTokenMint,
             "spl-token-owner" => AccountIndex::SplTokenOwner,
@@ -146,13 +147,25 @@ fn main() {
         .map(normalize_to_url_if_moniker)
         .map(RpcClient::new);
 
-    let (mint_address, random_mint) = pubkey_of(&matches, "mint_address")
-        .map(|pk| (pk, false))
-        .unwrap_or_else(|| {
-            read_keypair_file(&cli_config.keypair_path)
-                .map(|kp| (kp.pubkey(), false))
-                .unwrap_or_else(|_| (Keypair::new().pubkey(), true))
-        });
+    let (mint_address, random_mint) = if let Some(mint_str) = matches.get_one::<String>("mint_address") {
+        if let Ok(pk) = mint_str.parse::<Pubkey>() {
+            (pk, false)
+        } else {
+            let keypair = read_keypair_file(&cli_config.keypair_path)
+                .unwrap_or_else(|_| {
+                    eprintln!("Error: unable to read keypair file");
+                    exit(1);
+                });
+            (keypair.pubkey(), true)
+        }
+    } else {
+        let keypair = read_keypair_file(&cli_config.keypair_path)
+            .unwrap_or_else(|_| {
+                eprintln!("Error: unable to read keypair file");
+                exit(1);
+            });
+        (keypair.pubkey(), true)
+    };
 
     let rpc_port = matches.get_one::<String>("rpc_port").unwrap().parse::<u16>().unwrap();
     let enable_vote_subscription = matches.get_flag("rpc_pubsub_enable_vote_subscription");
@@ -220,7 +233,7 @@ fn main() {
     };
 
     let mut upgradeable_programs_to_load = vec![];
-    if let Some(values) = matches.values_of("bpf_program") {
+    if let Some(values) = matches.get_many::<String>("bpf_program") {
         for (address, program) in values.into_iter().tuples() {
             let address = parse_address(address, "address");
             let program_path = parse_program_path(program);
@@ -234,9 +247,9 @@ fn main() {
         }
     }
 
-    if let Some(values) = matches.values_of("upgradeable_program") {
+    if let Some(values) = matches.get_many::<String>("upgradeable_program") {
         for (address, program, upgrade_authority) in
-            values.into_iter().tuples::<(&str, &str, &str)>()
+            values.into_iter().map(|s| s.as_str()).tuples::<(&str, &str, &str)>()
         {
             let address = parse_address(address, "address");
             let program_path = parse_program_path(program);
@@ -264,7 +277,7 @@ fn main() {
     }
 
     let mut accounts_to_load = vec![];
-    if let Some(values) = matches.values_of("account") {
+    if let Some(values) = matches.get_many::<String>("account") {
         for (address, filename) in values.into_iter().tuples() {
             let address = if address == "-" {
                 None
@@ -280,26 +293,30 @@ fn main() {
     }
 
     let accounts_from_dirs: HashSet<_> = matches
-        .values_of("account_dir")
+        .get_many::<String>("account_dir")
         .unwrap_or_default()
         .collect();
 
-    let accounts_to_clone: HashSet<_> = pubkeys_of(&matches, "clone_account")
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_default();
+    let accounts_to_clone: HashSet<_> = matches.get_many::<String>("clone_account")
+        .unwrap_or_default()
+        .filter_map(|s| s.parse::<Pubkey>().ok())
+        .collect();
 
-    let accounts_to_maybe_clone: HashSet<_> = pubkeys_of(&matches, "maybe_clone_account")
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_default();
+    let accounts_to_maybe_clone: HashSet<_> = matches.get_many::<String>("maybe_clone_account")
+        .unwrap_or_default()
+        .filter_map(|s| s.parse::<Pubkey>().ok())
+        .collect();
 
     let upgradeable_programs_to_clone: HashSet<_> =
-        pubkeys_of(&matches, "clone_upgradeable_program")
-            .map(|v| v.into_iter().collect())
-            .unwrap_or_default();
+        matches.get_many::<String>("clone_upgradeable_program")
+            .unwrap_or_default()
+            .filter_map(|s| s.parse::<Pubkey>().ok())
+            .collect();
 
-    let alt_accounts_to_clone: HashSet<_> = pubkeys_of(&matches, "deep_clone_address_lookup_table")
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_default();
+    let alt_accounts_to_clone: HashSet<_> = matches.get_many::<String>("deep_clone_address_lookup_table")
+        .unwrap_or_default()
+        .filter_map(|s| s.parse::<Pubkey>().ok())
+        .collect();
 
     let clone_feature_set = matches.get_flag("clone_feature_set");
 
@@ -308,7 +325,7 @@ fn main() {
             Some(_) => matches.get_one::<String>("warp_slot").unwrap().parse::<Slot>().unwrap(),
             None => cluster_rpc_client
                 .as_ref()
-                .unwrap_or_else(|_| {
+                .unwrap_or_else(|| {
                     println!(
                         "The --url argument must be provided if --warp-slot/-w is used without an \
                          explicit slot"
@@ -325,7 +342,7 @@ fn main() {
         None
     };
 
-    let faucet_lamports = sol_to_lamports(value_of(&matches, "faucet_sol").unwrap());
+    let faucet_lamports = sol_to_lamports(matches.get_one::<String>("faucet_sol").unwrap().parse::<f64>().unwrap());
     let faucet_keypair_file = ledger_path.join("faucet-keypair.json");
     if !faucet_keypair_file.exists() {
         write_keypair_file(&Keypair::new(), faucet_keypair_file.to_str().unwrap()).unwrap_or_else(
@@ -373,7 +390,10 @@ fn main() {
         exit(1);
     });
 
-    let features_to_deactivate = pubkeys_of(&matches, "deactivate_feature").unwrap_or_default();
+    let features_to_deactivate: HashSet<_> = matches.get_many::<String>("deactivate_feature")
+        .unwrap_or_default()
+        .filter_map(|s| s.parse::<Pubkey>().ok())
+        .collect();
 
     if TestValidatorGenesis::ledger_exists(&ledger_path) {
         for (name, long) in &[
@@ -399,7 +419,7 @@ fn main() {
     }
 
     let mut genesis = TestValidatorGenesis::default();
-    genesis.max_ledger_shreds = value_of(&matches, "limit_ledger_size");
+    genesis.max_ledger_shreds = matches.get_one::<String>("limit_ledger_size").map(|s| s.parse::<u64>().unwrap());
     genesis.max_genesis_archive_unpacked_size = Some(u64::MAX);
     genesis.log_messages_bytes_limit = matches.get_one::<String>("log_messages_bytes_limit").map(|s| s.parse::<usize>().unwrap());
     genesis.transaction_account_lock_limit =
@@ -479,7 +499,7 @@ fn main() {
             println!("Error: add_accounts_from_directories failed: {e}");
             exit(1);
         })
-        .deactivate_features(&features_to_deactivate);
+        .deactivate_features(&features_to_deactivate.into_iter().collect::<Vec<_>>());
 
     genesis.rpc_config(JsonRpcConfig {
         enable_rpc_transaction_history: true,

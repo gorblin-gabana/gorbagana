@@ -120,9 +120,9 @@ impl Default for Config {
 }
 
 /// Defines and builds the CLI args for a run of the benchmark
-pub fn build_args<'a>(version: &'_ str) -> Command<'a, '_> {
+pub fn build_args(version: &str) -> Command {
     Command::new(crate_name!()).about(crate_description!())
-        .version(version)
+        .version(Box::leak(Box::new(version.to_string())).as_str())
         .arg({
             let arg = Arg::new("config_file")
                 .short('C')

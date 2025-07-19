@@ -1,26 +1,26 @@
 use {
-    clap::{crate_description, crate_name, crate_version, ArgEnum, Args, Parser},
+    clap::{Args, Parser, ValueEnum},
     serde::{Deserialize, Serialize},
     solana_pubkey::Pubkey,
     std::{net::SocketAddr, process::exit, str::FromStr},
 };
 
 #[derive(Parser, Debug, PartialEq, Eq)]
-#[clap(name = crate_name!(),
-    version = crate_version!(),
-    about = crate_description!(),
+#[clap(name = "solana-dos",
+    version = env!("CARGO_PKG_VERSION"),
+    about = "Solana DoS client",
     rename_all = "kebab-case"
 )]
 pub struct DosClientParameters {
-    #[clap(long, arg_enum, help = "Interface to DoS")]
+    #[clap(long, value_enum, help = "Interface to DoS")]
     pub mode: Mode,
 
-    #[clap(long, arg_enum, help = "Type of data to send")]
+    #[clap(long, value_enum, help = "Type of data to send")]
     pub data_type: DataType,
 
     #[clap(
         long = "entrypoint",
-        parse(try_from_str = addr_parser),
+        value_parser = addr_parser,
         default_value = "127.0.0.1:8001",
         help = "Gossip entrypoint address. Usually <ip>:8001"
     )]
@@ -36,7 +36,7 @@ pub struct DosClientParameters {
 
     #[clap(
         long,
-        parse(try_from_str = pubkey_parser),
+        value_parser = pubkey_parser,
         required_if_eq("mode", "rpc"),
         help = "Pubkey for rpc-mode calls"
     )]
@@ -106,7 +106,7 @@ pub struct TransactionParams {
 
     #[clap(
         long,
-        arg_enum,
+        value_enum,
         requires("valid-blockhash"),
         help = "Type of transaction to be sent"
     )]
@@ -120,7 +120,7 @@ pub struct TransactionParams {
     pub num_instructions: Option<usize>,
 }
 
-#[derive(ArgEnum, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
     Gossip,
     Tvu,
@@ -131,7 +131,7 @@ pub enum Mode {
     Rpc,
 }
 
-#[derive(ArgEnum, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataType {
     RepairHighest,
     RepairShred,
@@ -142,7 +142,7 @@ pub enum DataType {
     Transaction,
 }
 
-#[derive(ArgEnum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(ValueEnum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TransactionType {
     Transfer,
     AccountCreation,

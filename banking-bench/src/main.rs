@@ -43,6 +43,7 @@ use {
         time::{Duration, Instant},
     },
 };
+use clap::builder::PossibleValue;
 
 // transfer transaction cost = 1 * SIGNATURE_COST +
 //                             2 * WRITE_LOCK_UNITS +
@@ -80,28 +81,35 @@ fn check_txs(
     no_bank
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq)]
 enum WriteLockContention {
     /// No transactions lock the same accounts.
     None,
-    /// Transactions don't lock the same account, unless they belong to the same batch.
-    SameBatchOnly,
-    /// All transactions write lock the same account.
-    Full,
+    /// All transactions lock the same accounts.
+    All,
+    /// Some transactions lock the same accounts.
+    Some,
 }
 
 impl WriteLockContention {
-    fn possible_values<'a>() -> impl Iterator<Item = clap::PossibleValue<'a>> {
-        Self::value_variants()
-            .iter()
-            .filter_map(|v| v.to_possible_value())
+    fn possible_values<'a>() -> impl Iterator<Item = PossibleValue> {
+        Self::value_variants().iter().map(|v| PossibleValue::new(match v {
+            WriteLockContention::None => "none",
+            WriteLockContention::All => "all", 
+            WriteLockContention::Some => "some",
+        }))
     }
 }
 
 impl std::str::FromStr for WriteLockContention {
     type Err = String;
     fn from_str(input: &str) -> Result<Self, String> {
-        ArgEnum::from_str(input, false)
+        match input {
+            "none" => Ok(WriteLockContention::None),
+            "all" => Ok(WriteLockContention::All),
+            "some" => Ok(WriteLockContention::Some),
+            _ => Err(format!("Invalid write lock contention: {}", input)),
+        }
     }
 }
 
@@ -140,7 +148,8 @@ fn make_accounts_txs(
             new.message.account_keys[0] = pubkey::new_rand();
             new.message.account_keys[1] = match contention {
                 WriteLockContention::None => pubkey::new_rand(),
-                WriteLockContention::SameBatchOnly => {
+                WriteLockContention::All => to_pubkey,
+                WriteLockContention::Some => {
                     // simulated mint transactions have conflict accounts
                     if is_simulated_mint {
                         chunk_pubkeys[i / packets_per_batch]
@@ -148,7 +157,6 @@ fn make_accounts_txs(
                         pubkey::new_rand()
                     }
                 }
-                WriteLockContention::Full => to_pubkey,
             };
             new.signatures = vec![Signature::from(sig)];
             new
@@ -235,7 +243,7 @@ fn main() {
 
     let matches = Command::new(crate_name!())
         .about(crate_description!())
-        .version(solana_version::version!())
+        .version(Box::leak(Box::new(solana_version::version!().to_string())).as_str())
         .arg(
             Arg::new("iterations")
                 .long("iterations")
@@ -279,14 +287,14 @@ fn main() {
             Arg::new("block_production_method")
                 .long("block-production-method")
                 .value_name("METHOD")
-                .possible_values(BlockProductionMethod::cli_names())
+                .value_parser(clap::value_parser!(BlockProductionMethod))
                 .help(BlockProductionMethod::cli_message()),
         )
         .arg(
             Arg::new("transaction_struct")
                 .long("transaction-structure")
                 .value_name("STRUCT")
-                .possible_values(TransactionStructure::cli_names())
+                .value_parser(clap::value_parser!(TransactionStructure))
                 .help(TransactionStructure::cli_message()),
         )
         .arg(
